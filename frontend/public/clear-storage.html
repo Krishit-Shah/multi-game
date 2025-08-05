@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Storage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            color: #333;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Storage Cleanup Tool</h1>
+        <p>This tool will help clear any old authentication tokens that might be causing issues.</p>
+        
+        <button onclick="clearStorage()">Clear All Storage</button>
+        <button onclick="clearTokens()">Clear Only Tokens</button>
+        <button onclick="goToApp()">Go to Game Platform</button>
+        
+        <div id="result"></div>
+        
+        <hr style="margin: 30px 0;">
+        
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Click "Clear All Storage" to remove all stored data</li>
+            <li>Click "Go to Game Platform" to return to the app</li>
+            <li>Register a new account or login with your credentials</li>
+            <li>Create a room and start playing!</li>
+        </ol>
+    </div>
+
+    <script>
+        function clearStorage() {
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+                document.getElementById('result').innerHTML = 
+                    '<p class="success">✅ All storage cleared successfully!</p>';
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    '<p class="error">❌ Error clearing storage: ' + error.message + '</p>';
+            }
+        }
+
+        function clearTokens() {
+            try {
+                localStorage.removeItem('token');
+                sessionStorage.removeItem('token');
+                document.getElementById('result').innerHTML = 
+                    '<p class="success">✅ Authentication tokens cleared!</p>';
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    '<p class="error">❌ Error clearing tokens: ' + error.message + '</p>';
+            }
+        }
+
+        function goToApp() {
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html> 

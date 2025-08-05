@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Browser Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Browser Cache & Storage Cleaner</h1>
+        <p>Use these buttons to clear browser cache and storage to fix resource issues:</p>
+        
+        <button onclick="clearLocalStorage()">Clear localStorage</button>
+        <button onclick="clearSessionStorage()">Clear sessionStorage</button>
+        <button onclick="clearAllStorage()">Clear All Storage</button>
+        <button onclick="reloadPage()">Reload Page</button>
+        
+        <div id="status"></div>
+        
+        <h3>Manual Steps:</h3>
+        <ol>
+            <li>Press <strong>Ctrl+Shift+Delete</strong> (Windows) or <strong>Cmd+Shift+Delete</strong> (Mac)</li>
+            <li>Select "Cached images and files"</li>
+            <li>Click "Clear data"</li>
+            <li>Close and reopen your browser</li>
+        </ol>
+    </div>
+
+    <script>
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.innerHTML = `<div class="${isError ? 'error' : 'success'}">${message}</div>`;
+            setTimeout(() => {
+                status.innerHTML = '';
+            }, 3000);
+        }
+
+        function clearLocalStorage() {
+            try {
+                localStorage.clear();
+                showStatus('localStorage cleared successfully!');
+            } catch (error) {
+                showStatus('Error clearing localStorage: ' + error.message, true);
+            }
+        }
+
+        function clearSessionStorage() {
+            try {
+                sessionStorage.clear();
+                showStatus('sessionStorage cleared successfully!');
+            } catch (error) {
+                showStatus('Error clearing sessionStorage: ' + error.message, true);
+            }
+        }
+
+        function clearAllStorage() {
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+                showStatus('All storage cleared successfully!');
+            } catch (error) {
+                showStatus('Error clearing storage: ' + error.message, true);
+            }
+        }
+
+        function reloadPage() {
+            window.location.reload();
+        }
+
+        // Auto-clear on page load
+        window.onload = function() {
+            clearAllStorage();
+        };
+    </script>
+</body>
+</html> 
