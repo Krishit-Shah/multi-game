@@ -33,6 +33,8 @@ export const SocketProvider = ({ children }) => {
       newSocket.on('connect', () => {
         console.log('Connected to server');
         setIsConnected(true);
+        // Try to rejoin current room if user was in one
+        newSocket.emit('join-current-room');
       });
 
       newSocket.on('disconnect', () => {
