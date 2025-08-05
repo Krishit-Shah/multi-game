@@ -16,6 +16,7 @@ const Room = () => {
   const [error, setError] = useState('');
   const [isReady, setIsReady] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
 
   const fetchRoom = useCallback(async () => {
     try {
@@ -35,16 +36,11 @@ const Room = () => {
     }
   }, [roomId]);
 
+  // Setup socket event listeners first
   useEffect(() => {
-    fetchRoom();
-  }, [fetchRoom]);
-
-  useEffect(() => {
-    if (socket && room && !hasJoined) {
-      joinRoom(room.id);
-      setHasJoined(true);
-      
+    if (socket) {
       const handleRoomUpdated = ({ room: updatedRoom }) => {
+        console.log('Room updated via socket:', updatedRoom);
         setRoom(updatedRoom);
       };
 
@@ -65,19 +61,63 @@ const Room = () => {
         navigate('/dashboard');
       };
 
+      const handlePlayerSocketConnected = ({ userId, username, room: updatedRoom }) => {
+        console.log(`Player ${username} connected to room via socket`);
+        setRoom(updatedRoom);
+      };
+
+      const handleSocketConnect = () => {
+        console.log('Socket connected, refreshing room data');
+        setSocketReady(true);
+        // Refresh room data when socket reconnects
+        fetchRoom();
+      };
+
+      const handleSocketDisconnect = () => {
+        console.log('Socket disconnected');
+        setSocketReady(false);
+        setHasJoined(false);
+      };
+
+      // Set up all event listeners
       socket.on('room-updated', handleRoomUpdated);
       socket.on('player-ready-toggled', handlePlayerReadyToggled);
       socket.on('game-started', handleGameStarted);
       socket.on('room-destroyed', handleRoomDestroyed);
+      socket.on('player-socket-connected', handlePlayerSocketConnected);
+      socket.on('connect', handleSocketConnect);
+      socket.on('disconnect', handleSocketDisconnect);
+
+      // Check if already connected
+      if (socket.connected) {
+        setSocketReady(true);
+      }
 
       return () => {
         socket.off('room-updated', handleRoomUpdated);
         socket.off('player-ready-toggled', handlePlayerReadyToggled);
         socket.off('game-started', handleGameStarted);
         socket.off('room-destroyed', handleRoomDestroyed);
+        socket.off('player-socket-connected', handlePlayerSocketConnected);
+        socket.off('connect', handleSocketConnect);
+        socket.off('disconnect', handleSocketDisconnect);
       };
     }
-  }, [socket, room, roomId, navigate, joinRoom, hasJoined]);
+  }, [socket, roomId, navigate, fetchRoom]);
+
+  // Initial room fetch
+  useEffect(() => {
+    fetchRoom();
+  }, [fetchRoom]);
+
+  // Join socket room when both socket is ready and room data is loaded
+  useEffect(() => {
+    if (socketReady && room && !hasJoined) {
+      console.log('Joining socket room:', room.id);
+      joinRoom(room.id);
+      setHasJoined(true);
+    }
+  }, [socketReady, room, joinRoom, hasJoined]);
 
   const handleLeaveRoom = useCallback(async () => {
     try {
@@ -98,6 +138,11 @@ const Room = () => {
   const handleStartGame = useCallback(() => {
     navigate(`/game/${roomId}`);
   }, [roomId, navigate]);
+
+  const handleRefreshRoom = useCallback(() => {
+    console.log('Manually refreshing room data');
+    fetchRoom();
+  }, [fetchRoom]);
 
   // Cleanup when component unmounts
   useEffect(() => {
@@ -149,6 +194,9 @@ const Room = () => {
             <button className="btn btn-secondary" onClick={handleLeaveRoom}>
               Leave Room
             </button>
+            <button className="btn btn-outline" onClick={handleRefreshRoom} title="Refresh room data">
+              🔄
+            </button>
             {canStart && (
               <button className="btn btn-success" onClick={handleStartGame}>
                 Start Game
@@ -166,6 +214,12 @@ const Room = () => {
             <p><strong>Host:</strong> {hostName}</p>
             <p><strong>Players:</strong> {room.players.length}/{room.maxPlayers}</p>
             <p><strong>Status:</strong> {room.gameState}</p>
+            <p><strong>Connection:</strong> 
+              <span style={{ color: socketReady ? 'green' : 'red' }}>
+                {socketReady ? '● Connected' : '● Disconnected'}
+              </span>
+              {hasJoined && <span style={{ color: 'blue', marginLeft: '8px' }}>✓ Joined</span>}
+            </p>
 
             <div style={{ marginTop: '20px' }}>
               <h4>Players</h4>

@@ -349,7 +349,15 @@ router.post('/join/:code', authenticateToken, async (req, res) => {
     // Emit socket event to notify all players in the room about the new player
     const io = req.app.get('io');
     if (io) {
+      // Emit immediately for instant feedback
       io.to(updatedRoom._id.toString()).emit('room-updated', { room: formattedRoom });
+      
+      // Also emit after a small delay to ensure all clients receive the update
+      setTimeout(() => {
+        io.to(updatedRoom._id.toString()).emit('room-updated', { room: formattedRoom });
+        console.log(`Emitted delayed room-updated event to room ${updatedRoom._id} with ${updatedRoom.players.length} players`);
+      }, 500);
+      
       console.log(`Emitted room-updated event to room ${updatedRoom._id} with ${updatedRoom.players.length} players`);
     } else {
       console.log('IO instance not available for socket emission');

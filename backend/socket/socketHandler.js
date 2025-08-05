@@ -74,7 +74,15 @@ module.exports = (io) => {
           return;
         }
 
+        // Check if user is actually a player in this room
+        const isPlayer = room.players.some(p => p.user._id.toString() === socket.userId.toString());
+        if (!isPlayer) {
+          socket.emit('error', { message: 'You are not a member of this room' });
+          return;
+        }
+
         socket.join(roomId);
+        console.log(`Socket ${socket.id} (${socket.username}) joined room ${roomId}`);
         
         // Format room data for frontend
         const formattedRoom = {
@@ -97,7 +105,19 @@ module.exports = (io) => {
           gameData: room.gameData
         };
         
-        // Emit room update to all players
+        // First, send the current room state to the joining user
+        socket.emit('room-updated', {
+          room: formattedRoom
+        });
+
+        // Then, notify all other players in the room that someone joined
+        socket.to(roomId).emit('player-socket-connected', {
+          userId: socket.userId,
+          username: socket.username,
+          room: formattedRoom
+        });
+
+        // Also emit room update to all players to ensure consistency
         io.to(roomId).emit('room-updated', {
           room: formattedRoom
         });
