@@ -352,6 +352,12 @@ router.post('/join/:code', authenticateToken, async (req, res) => {
       // Emit immediately for instant feedback
       io.to(updatedRoom._id.toString()).emit('room-updated', { room: formattedRoom });
       
+      // Check if we should start countdown when new player joins
+      const { checkAndStartCountdown } = require('../socket/socketHandler');
+      if (typeof checkAndStartCountdown === 'function') {
+        checkAndStartCountdown(updatedRoom._id.toString(), io);
+      }
+      
       // Also emit after a small delay to ensure all clients receive the update
       setTimeout(() => {
         io.to(updatedRoom._id.toString()).emit('room-updated', { room: formattedRoom });

@@ -17,6 +17,8 @@ const Room = () => {
   const [isReady, setIsReady] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
   const [socketReady, setSocketReady] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [showCountdown, setShowCountdown] = useState(false);
 
   const fetchRoom = useCallback(async () => {
     try {
@@ -66,6 +68,18 @@ const Room = () => {
         setRoom(updatedRoom);
       };
 
+      const handleCountdownUpdate = ({ countdown: countdownValue }) => {
+        console.log(`Countdown update: ${countdownValue}`);
+        setCountdown(countdownValue);
+        setShowCountdown(true);
+      };
+
+      const handleCountdownCancelled = () => {
+        console.log('Countdown cancelled');
+        setCountdown(null);
+        setShowCountdown(false);
+      };
+
       const handleSocketConnect = () => {
         console.log('Socket connected, refreshing room data');
         setSocketReady(true);
@@ -85,6 +99,8 @@ const Room = () => {
       socket.on('game-started', handleGameStarted);
       socket.on('room-destroyed', handleRoomDestroyed);
       socket.on('player-socket-connected', handlePlayerSocketConnected);
+      socket.on('countdown-update', handleCountdownUpdate);
+      socket.on('countdown-cancelled', handleCountdownCancelled);
       socket.on('connect', handleSocketConnect);
       socket.on('disconnect', handleSocketDisconnect);
 
@@ -99,6 +115,8 @@ const Room = () => {
         socket.off('game-started', handleGameStarted);
         socket.off('room-destroyed', handleRoomDestroyed);
         socket.off('player-socket-connected', handlePlayerSocketConnected);
+        socket.off('countdown-update', handleCountdownUpdate);
+        socket.off('countdown-cancelled', handleCountdownCancelled);
         socket.off('connect', handleSocketConnect);
         socket.off('disconnect', handleSocketDisconnect);
       };
@@ -187,6 +205,23 @@ const Room = () => {
 
   return (
     <div>
+      {showCountdown && countdown !== null && (
+        <div className="card" style={{ 
+          backgroundColor: '#f8f9fa', 
+          border: '2px solid #007bff', 
+          marginBottom: '20px',
+          textAlign: 'center',
+          padding: '20px'
+        }}>
+          <h3 style={{ color: '#007bff', margin: '0' }}>
+            Game starts in {countdown} second{countdown !== 1 ? 's' : ''}...
+          </h3>
+          <p style={{ margin: '10px 0 0 0', color: '#666' }}>
+            Get ready! The game will begin automatically.
+          </p>
+        </div>
+      )}
+      
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2>{room.name}</h2>
