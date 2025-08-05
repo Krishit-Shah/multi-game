@@ -52,20 +52,16 @@ router.post('/create', authenticateToken, async (req, res) => {
       }
     } while (true);
     
-    console.log('Creating room with data:', { name, gameType, isPublic, code });
-    
     // Leave current room if user is in one
     if (req.user.currentRoom) {
       const currentRoom = await Room.findById(req.user.currentRoom);
       if (currentRoom) {
-        console.log(`User ${req.user.username} leaving current room to create new room`);
         // Remove user from current room
         currentRoom.players = currentRoom.players.filter(p => p.user.toString() !== req.user._id.toString());
         
         if (currentRoom.players.length === 0) {
           // Delete empty room
           await Room.findByIdAndDelete(currentRoom._id);
-          console.log(`Deleted empty room: ${currentRoom._id}`);
         } else {
           // Assign new host if needed
           if (currentRoom.host.toString() === req.user._id.toString()) {
@@ -90,14 +86,11 @@ router.post('/create', authenticateToken, async (req, res) => {
       gameState: 'waiting'
     });
 
-    console.log('Room object before save:', room);
-    await room.save();
-    console.log('Room saved successfully with ID:', room._id);
-
+        await room.save();
+    
     // Update user's current room
     req.user.currentRoom = room._id;
     await req.user.save();
-    console.log('User currentRoom updated to:', room._id);
 
     // Populate the room data for response
     const populatedRoom = await Room.findById(room._id)
@@ -211,14 +204,11 @@ router.post('/join/:code', authenticateToken, async (req, res) => {
     const { code } = req.params;
     const roomCode = code.toUpperCase();
     
-    console.log(`User ${req.user.username} trying to join room with code: ${roomCode}`);
-    
     // Check if user is already in a room with this code
     if (req.user.currentRoom) {
       const currentRoom = await Room.findById(req.user.currentRoom);
       if (currentRoom && currentRoom.code === roomCode) {
         // User is already in this room, just return the room data
-        console.log(`User ${req.user.username} is already in room ${roomCode}`);
         return res.json({
           message: 'Already in this room',
           room: {

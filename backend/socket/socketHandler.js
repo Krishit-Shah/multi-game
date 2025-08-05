@@ -273,8 +273,6 @@ module.exports = (io) => {
         }
 
         socket.join(roomId);
-        console.log(`Socket ${socket.id} (${socket.username}) joined room ${roomId}`);
-        
         // Format room data for frontend
         const formattedRoom = {
           id: room._id,
@@ -494,7 +492,6 @@ module.exports = (io) => {
           }
         });
 
-        console.log('Message sent and saved');
       } catch (error) {
         console.error('Send message error:', error);
         socket.emit('error', { message: 'Failed to send message' });
@@ -505,8 +502,6 @@ module.exports = (io) => {
     socket.on('game-move', async (data) => {
       try {
         const { roomId, move } = data;
-        console.log(`Game move received from ${socket.username}:`, move);
-        
         const room = await Room.findById(roomId);
         if (!room) {
           socket.emit('error', { message: 'Room not found' });
@@ -532,11 +527,8 @@ module.exports = (io) => {
     // Restart game
     socket.on('restart-game', async (roomId) => {
       try {
-        console.log(`Restart game requested by ${socket.username} for room ${roomId}`);
-        
         const room = await Room.findById(roomId);
         if (!room) {
-          console.log('Room not found for restart');
           return;
         }
 
@@ -558,7 +550,6 @@ module.exports = (io) => {
         });
 
         await room.save();
-        console.log('Game reset to waiting state');
 
         // Emit game reset to all players
         io.to(roomId).emit('game-reset', {
@@ -595,8 +586,6 @@ module.exports = (io) => {
           io.to(roomId).emit('room-updated', { room: formattedRoom });
         }
 
-        console.log('Restart game events emitted');
-
       } catch (error) {
         console.error('Restart game error:', error);
       }
@@ -604,8 +593,6 @@ module.exports = (io) => {
 
     // Handle disconnect - preserve room for potential refresh
     socket.on('disconnect', async () => {
-      console.log(`User disconnected: ${socket.username}`);
-      
       try {
         // Remove from connected users
         connectedUsers.delete(socket.userId.toString());
@@ -614,7 +601,6 @@ module.exports = (io) => {
         await User.findByIdAndUpdate(socket.userId, { isOnline: false });
         
         // Don't clear currentRoom - preserve it for refresh
-        console.log(`User ${socket.username} disconnected - room preserved for potential refresh`);
         
       } catch (error) {
         console.error('Disconnect cleanup error:', error);
@@ -627,34 +613,28 @@ module.exports = (io) => {
   async function handleTicTacToeMove(room, move, socket, io) {
     const { row, col } = move;
     
-    console.log(`Processing TicTacToe move: row=${row}, col=${col} by ${socket.username}`);
-    
     // Validate move
-    if (room.gameData.currentTurn.toString() !== socket.userId.toString()) {
-      console.log(`Not ${socket.username}'s turn. Current turn: ${room.gameData.currentTurn}`);
-      socket.emit('error', { message: 'Not your turn' });
-      return;
-    }
+          if (room.gameData.currentTurn.toString() !== socket.userId.toString()) {
+        socket.emit('error', { message: 'Not your turn' });
+        return;
+      }
 
     if (row < 0 || row > 2 || col < 0 || col > 2) {
       socket.emit('error', { message: 'Invalid move position' });
       return;
     }
 
-    if (room.gameData.board[row][col] !== '') {
-      console.log(`Cell ${row},${col} is already occupied: ${room.gameData.board[row][col]}`);
-      socket.emit('error', { message: 'Invalid move - cell already occupied' });
-      return;
-    }
+          if (room.gameData.board[row][col] !== '') {
+        socket.emit('error', { message: 'Invalid move - cell already occupied' });
+        return;
+      }
 
     // Make move directly on the room object
     const playerIndex = room.players.findIndex(p => p.user.toString() === socket.userId.toString());
-    const symbol = playerIndex === 0 ? 'X' : 'O';
-    room.gameData.board[row][col] = symbol;
+          const symbol = playerIndex === 0 ? 'X' : 'O';
+      room.gameData.board[row][col] = symbol;
 
-    console.log(`Move made by ${socket.username} (${symbol}) at ${row},${col}`);
-
-    // Check for win
+      // Check for win
     const winner = checkTicTacToeWinner(room.gameData.board);
     if (winner) {
       room.gameData.winner = socket.userId;
@@ -662,20 +642,17 @@ module.exports = (io) => {
       
       // Update stats
       const winnerPlayer = room.players.find(p => p.user.toString() === socket.userId.toString());
-      if (winnerPlayer) {
-        winnerPlayer.score += 10;
+              if (winnerPlayer) {
+          winnerPlayer.score += 10;
+        }
+      } else if (isBoardFull(room.gameData.board)) {
+        room.gameState = 'finished';
+      } else {
+        // Switch turns
+        const currentPlayerIndex = room.players.findIndex(p => p.user.toString() === room.gameData.currentTurn.toString());
+        const nextPlayerIndex = (currentPlayerIndex + 1) % room.players.length;
+        room.gameData.currentTurn = room.players[nextPlayerIndex].user;
       }
-      console.log(`Game won by ${socket.username} (${symbol})`);
-    } else if (isBoardFull(room.gameData.board)) {
-      room.gameState = 'finished';
-      console.log('Game ended in draw');
-    } else {
-      // Switch turns
-      const currentPlayerIndex = room.players.findIndex(p => p.user.toString() === room.gameData.currentTurn.toString());
-      const nextPlayerIndex = (currentPlayerIndex + 1) % room.players.length;
-      room.gameData.currentTurn = room.players[nextPlayerIndex].user;
-      console.log(`Turn switched to player ${nextPlayerIndex}`);
-    }
 
     // Emit game update immediately before database save for fast feedback
     io.to(room._id.toString()).emit('game-updated', {
@@ -683,15 +660,12 @@ module.exports = (io) => {
       gameState: room.gameState
     });
 
-    // Save room to database - keep it fast but reliable
-    try {
-      await room.save();
-      console.log('Room saved after move');
-    } catch (error) {
-      console.error('Error saving room after move:', error);
-    }
-
-    console.log('Game update events emitted');
+          // Save room to database - keep it fast but reliable
+      try {
+        await room.save();
+      } catch (error) {
+        console.error('Error saving room after move:', error);
+      }
   }
 
   async function handleQuizAnswer(room, answer, socket) {

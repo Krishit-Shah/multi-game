@@ -43,24 +43,20 @@ const Game = () => {
       joinRoom(room.id);
       
       const handleRoomUpdated = ({ room: updatedRoom }) => {
-        console.log('Room updated in game:', updatedRoom);
         setRoom(updatedRoom);
         setGameData(updatedRoom.gameData);
         
         // If game is reset to waiting, redirect back to room
         if (updatedRoom.gameState === 'waiting') {
-          console.log('Game reset to waiting, redirecting to room');
           navigate(`/room/${roomId}`);
         }
       };
 
       const handleGameStarted = ({ gameType, gameData: newGameData }) => {
-        console.log('Game started in game component:', gameType, newGameData);
         setGameData(newGameData);
       };
 
       const handleGameUpdated = ({ gameData: updatedGameData, gameState }) => {
-        console.log('Game updated:', updatedGameData, gameState);
         setGameData(updatedGameData);
         if (gameState === 'finished') {
           // Game ended, stay in room for chat
@@ -68,14 +64,12 @@ const Game = () => {
       };
 
       const handleGameReset = ({ gameState, gameData: resetGameData }) => {
-        console.log('Game reset:', gameState, resetGameData);
         setGameData(resetGameData);
         // Redirect back to room when game is reset
         navigate(`/room/${roomId}`);
       };
 
       const handleQuizQuestion = ({ question, questionIndex, timeLimit }) => {
-        console.log('Quiz question received:', question);
         setQuizState({
           currentQuestion: question,
           questionIndex,
@@ -91,7 +85,6 @@ const Game = () => {
       };
 
       const handleQuizResults = ({ questionIndex, correctAnswer, answers, scores }) => {
-        console.log('Quiz results received:', { questionIndex, correctAnswer, answers, scores });
         // Clear timer
         if (quizState.timer) {
           clearInterval(quizState.timer);
@@ -109,7 +102,6 @@ const Game = () => {
       };
 
       const handleGameEnded = ({ finalScores }) => {
-        console.log('Game ended:', finalScores);
         // Game completely finished
         setGameData(prev => ({ ...prev, gameState: 'finished' }));
       };
@@ -155,7 +147,6 @@ const Game = () => {
 
   const handleTicTacToeMove = (row, col) => {
     if (gameData && gameData.currentTurn === user.id && !gameData.board[row][col]) {
-      console.log('Making move:', row, col);
       
       // Optimistic UI update - immediately update the board
       const optimisticGameData = {
@@ -185,7 +176,6 @@ const Game = () => {
   };
 
   const handleRestartGame = () => {
-    console.log('Restarting game');
     restartGame(roomId);
   };
 

@@ -42,7 +42,6 @@ const Dashboard = () => {
     try {
       setError(''); // Clear previous errors
       const response = await axios.post('/api/rooms/create', createForm);
-      console.log('Room created:', response.data);
       updateCurrentRoom(response.data.room.id);
       navigate(`/room/${response.data.room.id}`);
     } catch (error) {
@@ -57,7 +56,6 @@ const Dashboard = () => {
     try {
       setError(''); // Clear previous errors
       const response = await axios.post(`/api/rooms/join/${joinCode.trim()}`);
-      console.log('Joined room:', response.data);
       updateCurrentRoom(response.data.room.id);
       navigate(`/room/${response.data.room.id}`);
     } catch (error) {
@@ -69,7 +67,6 @@ const Dashboard = () => {
     try {
       setError(''); // Clear previous errors
       const response = await axios.post(`/api/rooms/join/${roomCode}`);
-      console.log('Joined public room:', response.data);
       updateCurrentRoom(response.data.room.id);
       navigate(`/room/${response.data.room.id}`);
     } catch (error) {

@@ -18,12 +18,10 @@ const Chat = ({ roomId }) => {
   useEffect(() => {
     if (socket) {
       const handleChatHistory = ({ messages: history }) => {
-        console.log('Received chat history:', history);
         setMessages(history || []);
       };
 
       const handleNewMessage = ({ message }) => {
-        console.log('Received new message:', message);
         if (message && message.sender && message.content) {
           setMessages(prev => [...prev, message]);
         }

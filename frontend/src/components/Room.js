@@ -22,9 +22,7 @@ const Room = () => {
 
   const fetchRoom = useCallback(async () => {
     try {
-      console.log('Fetching room:', roomId);
       const response = await axios.get(`/api/rooms/${roomId}`);
-      console.log('Room data received:', response.data);
       setRoom(response.data.room);
     } catch (error) {
       console.error('Failed to load room:', error.response?.data || error.message);
@@ -42,7 +40,6 @@ const Room = () => {
   useEffect(() => {
     if (socket) {
       const handleRoomUpdated = ({ room: updatedRoom }) => {
-        console.log('Room updated via socket:', updatedRoom);
         setRoom(updatedRoom);
       };
 
@@ -64,31 +61,26 @@ const Room = () => {
       };
 
       const handlePlayerSocketConnected = ({ userId, username, room: updatedRoom }) => {
-        console.log(`Player ${username} connected to room via socket`);
         setRoom(updatedRoom);
       };
 
       const handleCountdownUpdate = ({ countdown: countdownValue }) => {
-        console.log(`Countdown update: ${countdownValue}`);
         setCountdown(countdownValue);
         setShowCountdown(true);
       };
 
       const handleCountdownCancelled = () => {
-        console.log('Countdown cancelled');
         setCountdown(null);
         setShowCountdown(false);
       };
 
       const handleSocketConnect = () => {
-        console.log('Socket connected, refreshing room data');
         setSocketReady(true);
         // Refresh room data when socket reconnects
         fetchRoom();
       };
 
       const handleSocketDisconnect = () => {
-        console.log('Socket disconnected');
         setSocketReady(false);
         setHasJoined(false);
       };
@@ -131,7 +123,6 @@ const Room = () => {
   // Join socket room when both socket is ready and room data is loaded
   useEffect(() => {
     if (socketReady && room && !hasJoined) {
-      console.log('Joining socket room:', room.id);
       joinRoom(room.id);
       setHasJoined(true);
     }
@@ -158,7 +149,6 @@ const Room = () => {
   }, [roomId, navigate]);
 
   const handleRefreshRoom = useCallback(() => {
-    console.log('Manually refreshing room data');
     fetchRoom();
   }, [fetchRoom]);
 
