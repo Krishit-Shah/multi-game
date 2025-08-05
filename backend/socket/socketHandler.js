@@ -243,7 +243,7 @@ module.exports = (io) => {
     // Join user's current room if exists
     socket.on('join-current-room', async () => {
       try {
-        const user = await User.findById(socket.userId).lean();
+        const user = await User.findById(socket.userId);
         if (user && user.currentRoom) {
           socket.join(user.currentRoom.toString());
           socket.emit('joined-room', { roomId: user.currentRoom });
@@ -472,19 +472,6 @@ module.exports = (io) => {
       try {
         const { roomId, content, messageType = 'chat' } = data;
         
-        // Emit message immediately for instant chat response
-        const tempMessageId = new Date().getTime().toString(); // Temporary ID
-        io.to(roomId).emit('new-message', {
-          message: {
-            id: tempMessageId,
-            content: content,
-            sender: socket.username, // Use socket username directly
-            messageType: messageType,
-            timestamp: new Date()
-          }
-        });
-
-        // Save to database asynchronously
         const message = new Message({
           room: roomId,
           sender: socket.userId,
@@ -492,24 +479,25 @@ module.exports = (io) => {
           messageType
         });
 
-        message.save().then(savedMessage => {
-          // Send updated message with real ID if needed
-          io.to(roomId).emit('message-saved', {
-            tempId: tempMessageId,
-            realId: savedMessage._id
-          });
-          console.log('Message saved to database');
-        }).catch(error => {
-          console.error('Error saving message:', error);
-          // Optionally emit error to remove the temporary message
-          io.to(roomId).emit('message-error', {
-            tempId: tempMessageId,
-            error: 'Failed to save message'
-          });
+        // Save and populate sender information
+        await message.save();
+        await message.populate('sender', 'username');
+
+        // Emit message with proper sender information
+        io.to(roomId).emit('new-message', {
+          message: {
+            id: message._id,
+            content: message.content,
+            sender: message.sender.username,
+            messageType: message.messageType,
+            timestamp: message.timestamp
+          }
         });
 
+        console.log('Message sent and saved');
       } catch (error) {
         console.error('Send message error:', error);
+        socket.emit('error', { message: 'Failed to send message' });
       }
     });
 
@@ -519,8 +507,7 @@ module.exports = (io) => {
         const { roomId, move } = data;
         console.log(`Game move received from ${socket.username}:`, move);
         
-        // Use lean() for faster query without full document features
-        const room = await Room.findById(roomId).lean();
+        const room = await Room.findById(roomId);
         if (!room) {
           socket.emit('error', { message: 'Room not found' });
           return;
@@ -532,7 +519,7 @@ module.exports = (io) => {
         }
 
         if (room.gameType === 'tic-tac-toe') {
-          await handleTicTacToeMove(room, move, socket, io, roomId);
+          await handleTicTacToeMove(room, move, socket, io);
         } else if (room.gameType === 'quiz') {
           await handleQuizMove(room, move, socket, io);
         }
@@ -637,7 +624,7 @@ module.exports = (io) => {
 
   // Game logic functions are now defined at the top of the file
 
-  async function handleTicTacToeMove(room, move, socket, io, roomId) {
+  async function handleTicTacToeMove(room, move, socket, io) {
     const { row, col } = move;
     
     console.log(`Processing TicTacToe move: row=${row}, col=${col} by ${socket.username}`);
@@ -660,64 +647,51 @@ module.exports = (io) => {
       return;
     }
 
-    // Make move
+    // Make move directly on the room object
     const playerIndex = room.players.findIndex(p => p.user.toString() === socket.userId.toString());
     const symbol = playerIndex === 0 ? 'X' : 'O';
-    
-    // Create updated game data for immediate response
-    const updatedGameData = {
-      ...room.gameData,
-      board: room.gameData.board.map((boardRow, r) => 
-        boardRow.map((cell, c) => (r === row && c === col) ? symbol : cell)
-      )
-    };
-    
+    room.gameData.board[row][col] = symbol;
+
+    console.log(`Move made by ${socket.username} (${symbol}) at ${row},${col}`);
+
     // Check for win
-    const winner = checkTicTacToeWinner(updatedGameData.board);
-    let updatedGameState = room.gameState;
-    
+    const winner = checkTicTacToeWinner(room.gameData.board);
     if (winner) {
-      updatedGameData.winner = socket.userId;
-      updatedGameState = 'finished';
+      room.gameData.winner = socket.userId;
+      room.gameState = 'finished';
+      
+      // Update stats
+      const winnerPlayer = room.players.find(p => p.user.toString() === socket.userId.toString());
+      if (winnerPlayer) {
+        winnerPlayer.score += 10;
+      }
       console.log(`Game won by ${socket.username} (${symbol})`);
-    } else if (isBoardFull(updatedGameData.board)) {
-      updatedGameState = 'finished';
+    } else if (isBoardFull(room.gameData.board)) {
+      room.gameState = 'finished';
       console.log('Game ended in draw');
     } else {
       // Switch turns
       const currentPlayerIndex = room.players.findIndex(p => p.user.toString() === room.gameData.currentTurn.toString());
       const nextPlayerIndex = (currentPlayerIndex + 1) % room.players.length;
-      updatedGameData.currentTurn = room.players[nextPlayerIndex].user;
+      room.gameData.currentTurn = room.players[nextPlayerIndex].user;
       console.log(`Turn switched to player ${nextPlayerIndex}`);
     }
 
-    console.log(`Move made by ${socket.username} (${symbol}) at ${row},${col}`);
-
-    // Emit game update immediately for instant feedback
-    io.to(roomId).emit('game-updated', {
-      gameData: updatedGameData,
-      gameState: updatedGameState
+    // Emit game update immediately before database save for fast feedback
+    io.to(room._id.toString()).emit('game-updated', {
+      gameData: room.gameData,
+      gameState: room.gameState
     });
 
-    // Update database asynchronously using atomic operations
-    const updateOperations = {
-      [`gameData.board.${row}.${col}`]: symbol,
-      'gameData.currentTurn': updatedGameData.currentTurn,
-      'gameState': updatedGameState
-    };
-
-    if (winner) {
-      updateOperations['gameData.winner'] = socket.userId;
-      updateOperations[`players.${playerIndex}.score`] = room.players[playerIndex].score + 10;
+    // Save room to database - keep it fast but reliable
+    try {
+      await room.save();
+      console.log('Room saved after move');
+    } catch (error) {
+      console.error('Error saving room after move:', error);
     }
 
-    Room.findByIdAndUpdate(roomId, { $set: updateOperations }).then(() => {
-      console.log('Room updated in database after move');
-    }).catch(error => {
-      console.error('Error updating room after move:', error);
-    });
-
-    console.log('Game update events emitted immediately');
+    console.log('Game update events emitted');
   }
 
   async function handleQuizAnswer(room, answer, socket) {
