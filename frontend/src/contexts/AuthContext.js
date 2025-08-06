@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
 
   // Set up axios defaults and interceptors
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
       (error) => {
         if (error.response?.status === 401) {
           // Clear invalid token automatically
-          localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
           delete axios.defaults.headers.common['Authorization'];
           setUser(null);
         }
@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }) => {
   // Check if user is logged in on mount
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       if (token) {
         try {
           const response = await axios.get('/api/auth/profile');
@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (error) {
           // Clear invalid token automatically
-          localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
           delete axios.defaults.headers.common['Authorization'];
           setUser(null);
         }
@@ -75,7 +75,7 @@ export const AuthProvider = ({ children }) => {
       const response = await axios.post('/api/auth/login', { email, password });
       const { token, user } = response.data;
       
-      localStorage.setItem('token', token);
+      sessionStorage.setItem('token', token);
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(user);
       return { success: true };
@@ -91,7 +91,7 @@ export const AuthProvider = ({ children }) => {
       const response = await axios.post('/api/auth/register', { username, email, password });
       const { token, user } = response.data;
       
-      localStorage.setItem('token', token);
+      sessionStorage.setItem('token', token);
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(user);
       return { success: true };
@@ -105,7 +105,7 @@ export const AuthProvider = ({ children }) => {
     // Clean up user's room before logout
     const cleanupUserRoom = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (token) {
           // Leave current room if any
           await axios.post('/api/rooms/leave');
@@ -117,14 +117,14 @@ export const AuthProvider = ({ children }) => {
 
     cleanupUserRoom();
     
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
     setError('');
   };
 
   const clearAuth = () => {
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
   };
