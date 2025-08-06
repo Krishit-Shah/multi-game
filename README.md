@@ -339,4 +339,20 @@ For issues and questions:
 
 ---
 
+
 **Happy Gaming! 🎮** 
+
+
+
+Frontend:
+
+Add a "showing results" state to the quiz UI, so users see the correct answer and scores for a few seconds before the next question.
+Disable answer buttons immediately after an answer is selected to prevent double submissions.
+Ensure all timers are cleared before setting a new one to prevent leaks.
+Show a summary screen at the end of the quiz with final scores and correct answers.
+Backend:
+
+When a player disconnects, remove them from the list of active players for the current question.
+Consider emitting a "question-skipped" or "auto-advance" event if not all players answer within the time limit.
+Store the timestamp when the question is sent and calculate the actual answer time on the backend for more accurate scoring.
+Add more robust error handling/logging for quiz state transitions.
