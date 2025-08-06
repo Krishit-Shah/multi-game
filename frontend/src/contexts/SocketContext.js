@@ -95,7 +95,6 @@ export const SocketProvider = ({ children }) => {
 
   const sendMessage = useCallback((roomId, content, messageType = 'chat') => {
     if (socket) {
-      console.log('Sending message:', { roomId, content, messageType });
       socket.emit('send-message', { roomId, content, messageType });
     }
   }, [socket]);
@@ -108,7 +107,6 @@ export const SocketProvider = ({ children }) => {
 
   const restartGame = (roomId) => {
     if (socket && isConnected) {
-      console.log('Restarting game for room:', roomId);
       socket.emit('restart-game', roomId);
     }
   };
