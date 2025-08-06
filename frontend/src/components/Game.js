@@ -168,9 +168,9 @@ const Game = () => {
       // Set moving state to prevent double-clicks
       setIsMoving(true);
       
-      // Determine player symbol based on player index in room
-      const currentPlayer = room?.players?.find(p => p.user.id === user.id);
-      const playerIndex = room?.players?.findIndex(p => p.user.id === user.id);
+      // Determine player symbol based on active player index in room
+      const activePlayers = room?.players?.filter(p => !p.isSpectator) || [];
+      const playerIndex = activePlayers.findIndex(p => p.user.id === user.id);
       const symbol = playerIndex === 0 ? 'X' : 'O';
       
       // Optimistic UI update - immediately update the board
