@@ -642,9 +642,16 @@ module.exports = (io) => {
     
     console.log(`Processing TicTacToe move: row=${row}, col=${col} by ${socket.username}`);
     
+    // Get the latest room data to avoid race conditions
+    const latestRoom = await Room.findById(roomId);
+    if (!latestRoom || latestRoom.gameState !== 'playing') {
+      socket.emit('error', { message: 'Game is not in progress' });
+      return;
+    }
+    
     // Validate move
-    if (room.gameData.currentTurn.toString() !== socket.userId.toString()) {
-      console.log(`Not ${socket.username}'s turn. Current turn: ${room.gameData.currentTurn}`);
+    if (latestRoom.gameData.currentTurn.toString() !== socket.userId.toString()) {
+      console.log(`Not ${socket.username}'s turn. Current turn: ${latestRoom.gameData.currentTurn}`);
       socket.emit('error', { message: 'Not your turn' });
       return;
     }
@@ -654,27 +661,27 @@ module.exports = (io) => {
       return;
     }
 
-    if (room.gameData.board[row][col] !== '') {
-      console.log(`Cell ${row},${col} is already occupied: ${room.gameData.board[row][col]}`);
+    if (latestRoom.gameData.board[row][col] !== '') {
+      console.log(`Cell ${row},${col} is already occupied: ${latestRoom.gameData.board[row][col]}`);
       socket.emit('error', { message: 'Invalid move - cell already occupied' });
       return;
     }
 
     // Make move
-    const playerIndex = room.players.findIndex(p => p.user.toString() === socket.userId.toString());
+    const playerIndex = latestRoom.players.findIndex(p => p.user.toString() === socket.userId.toString());
     const symbol = playerIndex === 0 ? 'X' : 'O';
     
     // Create updated game data for immediate response
     const updatedGameData = {
-      ...room.gameData,
-      board: room.gameData.board.map((boardRow, r) => 
+      ...latestRoom.gameData,
+      board: latestRoom.gameData.board.map((boardRow, r) => 
         boardRow.map((cell, c) => (r === row && c === col) ? symbol : cell)
       )
     };
     
     // Check for win
     const winner = checkTicTacToeWinner(updatedGameData.board);
-    let updatedGameState = room.gameState;
+    let updatedGameState = latestRoom.gameState;
     
     if (winner) {
       updatedGameData.winner = socket.userId;
@@ -685,9 +692,9 @@ module.exports = (io) => {
       console.log('Game ended in draw');
     } else {
       // Switch turns
-      const currentPlayerIndex = room.players.findIndex(p => p.user.toString() === room.gameData.currentTurn.toString());
-      const nextPlayerIndex = (currentPlayerIndex + 1) % room.players.length;
-      updatedGameData.currentTurn = room.players[nextPlayerIndex].user;
+      const currentPlayerIndex = latestRoom.players.findIndex(p => p.user.toString() === latestRoom.gameData.currentTurn.toString());
+      const nextPlayerIndex = (currentPlayerIndex + 1) % latestRoom.players.length;
+      updatedGameData.currentTurn = latestRoom.players[nextPlayerIndex].user;
       console.log(`Turn switched to player ${nextPlayerIndex}`);
     }
 
@@ -708,7 +715,7 @@ module.exports = (io) => {
 
     if (winner) {
       updateOperations['gameData.winner'] = socket.userId;
-      updateOperations[`players.${playerIndex}.score`] = room.players[playerIndex].score + 10;
+      updateOperations[`players.${playerIndex}.score`] = latestRoom.players[playerIndex].score + 10;
     }
 
     Room.findByIdAndUpdate(roomId, { $set: updateOperations }).then(() => {
@@ -718,6 +725,39 @@ module.exports = (io) => {
     });
 
     console.log('Game update events emitted immediately');
+  }
+
+  async function handleQuizMove(room, move, socket, io) {
+    const { questionIndex, selectedAnswer, timeAnswered } = move;
+    
+    // Check if answer already submitted
+    const existingAnswer = room.gameData.answers.find(
+      a => a.player.toString() === socket.userId.toString() && a.questionIndex === questionIndex
+    );
+    
+    if (existingAnswer) return;
+
+    // Add answer
+    room.gameData.answers.push({
+      player: socket.userId,
+      questionIndex,
+      answer: selectedAnswer,
+      timeAnswered
+    });
+
+    await Room.findByIdAndUpdate(room._id, { 
+      $set: { 'gameData.answers': room.gameData.answers } 
+    });
+
+    // Check if all players answered or time is up
+    const activePlayers = room.players.filter(p => !p.isSpectator);
+    const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
+    
+    if (answersForQuestion.length === activePlayers.length) {
+      setTimeout(() => {
+        processQuizQuestion(room._id.toString(), questionIndex, io);
+      }, 1000);
+    }
   }
 
   async function handleQuizAnswer(room, answer, socket) {

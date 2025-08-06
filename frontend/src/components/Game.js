@@ -21,6 +21,7 @@ const Game = () => {
     timeLeft: 0,
     timer: null
   });
+  const [isMoving, setIsMoving] = useState(false);
 
   const fetchRoom = useCallback(async () => {
     try {
@@ -62,6 +63,7 @@ const Game = () => {
       const handleGameUpdated = ({ gameData: updatedGameData, gameState }) => {
         console.log('Game updated:', updatedGameData, gameState);
         setGameData(updatedGameData);
+        setIsMoving(false); // Reset moving state when game is updated
         if (gameState === 'finished') {
           // Game ended, stay in room for chat
         }
@@ -154,22 +156,33 @@ const Game = () => {
   };
 
   const handleTicTacToeMove = (row, col) => {
-    if (gameData && gameData.currentTurn === user.id && !gameData.board[row][col]) {
+    if (gameData && gameData.currentTurn === user.id && !gameData.board[row][col] && !isMoving) {
       console.log('Making move:', row, col);
+      
+      // Set moving state to prevent double-clicks
+      setIsMoving(true);
+      
+      // Determine player symbol based on player index in room
+      const currentPlayer = room?.players?.find(p => p.user.id === user.id);
+      const playerIndex = room?.players?.findIndex(p => p.user.id === user.id);
+      const symbol = playerIndex === 0 ? 'X' : 'O';
       
       // Optimistic UI update - immediately update the board
       const optimisticGameData = {
         ...gameData,
         board: gameData.board.map((r, i) => 
-          i === row ? r.map((c, j) => j === col ? (gameData.board.every((r, ri) => 
-            ri === 0 ? r.every((c, ci) => ci === 0 ? true : c !== '') : r.every((c, ci) => c !== '')
-          ) ? 'X' : 'O') : c) : r
+          i === row ? r.map((c, j) => j === col ? symbol : c) : r
         )
       };
       setGameData(optimisticGameData);
       
       // Send move to server
       makeMove(roomId, { row, col });
+      
+      // Reset moving state after a short delay
+      setTimeout(() => {
+        setIsMoving(false);
+      }, 500);
     }
   };
 
@@ -250,9 +263,9 @@ const Game = () => {
               <div
                 key={`${rowIndex}-${colIndex}`}
                 className={`game-cell ${cell.toLowerCase()}`}
-                onClick={() => !gameFinished && isMyTurn && !cell && handleTicTacToeMove(rowIndex, colIndex)}
+                onClick={() => !gameFinished && isMyTurn && !cell && !isMoving && handleTicTacToeMove(rowIndex, colIndex)}
                 style={{ 
-                  cursor: (!gameFinished && isMyTurn && !cell) ? 'pointer' : 'default',
+                  cursor: (!gameFinished && isMyTurn && !cell && !isMoving) ? 'pointer' : 'default',
                   border: '2px solid #333',
                   height: '80px',
                   display: 'flex',
@@ -260,7 +273,8 @@ const Game = () => {
                   justifyContent: 'center',
                   fontSize: '32px',
                   fontWeight: 'bold',
-                  backgroundColor: (!gameFinished && isMyTurn && !cell) ? '#f0f0f0' : 'white'
+                  backgroundColor: (!gameFinished && isMyTurn && !cell && !isMoving) ? '#f0f0f0' : 'white',
+                  opacity: isMoving ? 0.7 : 1
                 }}
               >
                 {cell}
