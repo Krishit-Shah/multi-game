@@ -256,6 +256,7 @@ const Game = () => {
         questionIndex: quizState.questionIndex,
         selectedAnswer: answerIndex
       });
+      // Immediately disable further answers
       setQuizState(prev => ({ ...prev, showingResults: true }));
     }
   };
@@ -423,7 +424,9 @@ const Game = () => {
         <div className="card">
           <h3>Quiz Game</h3>
           <div className="quiz-container">
-            <div className="quiz-timer">Next question in 3 seconds...</div>
+            {quizState.showingResults && (
+              <div className="quiz-timer">Next question in 3 seconds...</div>
+            )}
             <div className="quiz-question">{quizState.currentQuestion?.question}</div>
             <div className="quiz-options">
               {quizState.currentQuestion.options.map((option, index) => (
