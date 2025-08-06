@@ -134,7 +134,10 @@ async function startQuizQuestion(roomId, io) {
     if (!room || room.gameState !== 'playing') return;
 
     const currentQuestion = room.gameData.questions[room.gameData.currentQuestion];
-    
+    // Store timestamp for question sent
+    room.gameData.questionSentAt = Date.now();
+    await room.save();
+
     io.to(roomId).emit('quiz-question', {
       question: currentQuestion,
       questionIndex: room.gameData.currentQuestion,
@@ -142,10 +145,9 @@ async function startQuizQuestion(roomId, io) {
     });
 
     // Set timer
-    setTimeout(() => {
-      processQuizQuestion(roomId, room.gameData.currentQuestion, io);
+    room.gameData.questionTimeout = setTimeout(async () => {
+      await processQuizQuestion(roomId, room.gameData.currentQuestion, io);
     }, 20000);
-
   } catch (error) {
     console.error('Start quiz question error:', error);
   }
@@ -155,6 +157,12 @@ async function processQuizQuestion(roomId, questionIndex, io) {
   try {
     const room = await Room.findById(roomId);
     if (!room) return;
+
+    // Clear any running timer
+    if (room.gameData.questionTimeout) {
+      clearTimeout(room.gameData.questionTimeout);
+      room.gameData.questionTimeout = null;
+    }
 
     const question = room.gameData.questions[questionIndex];
     const answers = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
@@ -190,7 +198,6 @@ async function processQuizQuestion(roomId, questionIndex, io) {
     if (room.gameData.currentQuestion >= room.gameData.questions.length) {
       room.gameState = 'finished';
       await room.save();
-      
       io.to(roomId).emit('game-ended', {
         finalScores: room.players.map(p => ({
           userId: p.user,
@@ -199,13 +206,10 @@ async function processQuizQuestion(roomId, questionIndex, io) {
       });
     } else {
       await room.save();
-      
-      // Start next question after 3 seconds
       setTimeout(() => {
         startQuizQuestion(roomId, io);
       }, 3000);
     }
-
   } catch (error) {
     console.error('Process quiz question error:', error);
   }
@@ -639,6 +643,20 @@ module.exports = (io) => {
         // Update user offline status
         await User.findByIdAndUpdate(socket.userId, { isOnline: false });
         
+        // Remove from active players for current question
+        const room = await Room.findOne({ 'players.user': socket.userId, gameState: 'playing' });
+        if (room && room.gameType === 'quiz') {
+          // Remove player from players array
+          room.players = room.players.filter(p => p.user.toString() !== socket.userId.toString());
+          await room.save();
+          // If all remaining players have answered, process immediately
+          const questionIndex = room.gameData.currentQuestion;
+          const activePlayers = room.players.filter(p => !p.isSpectator);
+          const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
+          if (answersForQuestion.length === activePlayers.length) {
+            await processQuizQuestion(room._id.toString(), questionIndex, io);
+          }
+        }
         // Don't clear currentRoom - preserve it for refresh
         console.log(`User ${socket.username} disconnected - room preserved for potential refresh`);
         
@@ -757,14 +775,16 @@ module.exports = (io) => {
   }
 
   async function handleQuizMove(room, move, socket, io) {
-    const { questionIndex, selectedAnswer, timeAnswered } = move;
-    
+    const { questionIndex, selectedAnswer } = move;
     // Check if answer already submitted
     const existingAnswer = room.gameData.answers.find(
       a => a.player.toString() === socket.userId.toString() && a.questionIndex === questionIndex
     );
-    
     if (existingAnswer) return;
+
+    // Calculate answer time based on questionSentAt
+    const now = Date.now();
+    const timeAnswered = room.gameData.questionSentAt ? Math.floor((now - room.gameData.questionSentAt) / 1000) : 20;
 
     // Add answer
     room.gameData.answers.push({
@@ -773,19 +793,14 @@ module.exports = (io) => {
       answer: selectedAnswer,
       timeAnswered
     });
+    await Room.findByIdAndUpdate(room._id, { $set: { 'gameData.answers': room.gameData.answers } });
 
-    await Room.findByIdAndUpdate(room._id, { 
-      $set: { 'gameData.answers': room.gameData.answers } 
-    });
-
-    // Check if all players answered or time is up
+    // Check if all players answered
     const activePlayers = room.players.filter(p => !p.isSpectator);
     const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
-    
     if (answersForQuestion.length === activePlayers.length) {
-      setTimeout(() => {
-        processQuizQuestion(room._id.toString(), questionIndex, io);
-      }, 1000);
+      // All answered, process immediately
+      await processQuizQuestion(room._id.toString(), questionIndex, io);
     }
   }
 
