@@ -17,9 +17,13 @@ const Game = () => {
   const [error, setError] = useState('');
   const [quizState, setQuizState] = useState({
     currentQuestion: null,
+    questionIndex: null,
     selectedAnswer: null,
     timeLeft: 0,
-    timer: null
+    timer: null,
+    showingResults: false,
+    results: null,
+    summary: null
   });
   const [isMoving, setIsMoving] = useState(false);
 
@@ -83,7 +87,7 @@ const Game = () => {
       };
 
       const handleQuizQuestion = ({ question, questionIndex, timeLimit }) => {
-        console.log('Quiz question:', questionIndex + 1);
+        if (quizState.timer) clearInterval(quizState.timer);
         setQuizState({
           currentQuestion: question,
           questionIndex,
@@ -94,31 +98,42 @@ const Game = () => {
               ...prev,
               timeLeft: prev.timeLeft - 1
             }));
-          }, 1000)
+          }, 1000),
+          showingResults: false,
+          results: null,
+          summary: null
         });
       };
 
       const handleQuizResults = ({ questionIndex, correctAnswer, answers, scores }) => {
-        console.log('Quiz results for question:', questionIndex + 1);
-        // Clear timer
-        if (quizState.timer) {
-          clearInterval(quizState.timer);
-        }
-        
-        // Show results briefly
+        if (quizState.timer) clearInterval(quizState.timer);
+        setQuizState(prev => ({
+          ...prev,
+          showingResults: true,
+          results: { questionIndex, correctAnswer, answers, scores },
+          timer: null
+        }));
         setTimeout(() => {
           setQuizState(prev => ({
             ...prev,
             currentQuestion: null,
             selectedAnswer: null,
+            showingResults: false,
+            results: null,
             timer: null
           }));
         }, 3000);
       };
 
       const handleGameEnded = ({ finalScores }) => {
-        console.log('Game ended with final scores');
-        // Game completely finished
+        setQuizState(prev => ({
+          ...prev,
+          summary: finalScores,
+          currentQuestion: null,
+          showingResults: false,
+          results: null,
+          timer: null
+        }));
         setGameData(prev => ({ ...prev, gameState: 'finished' }));
       };
 
@@ -203,13 +218,15 @@ const Game = () => {
   };
 
   const handleQuizAnswer = (answerIndex) => {
-    if (quizState.currentQuestion && quizState.selectedAnswer === null) {
+    if (quizState.currentQuestion && quizState.selectedAnswer === null && !quizState.showingResults) {
       setQuizState(prev => ({ ...prev, selectedAnswer: answerIndex }));
       makeMove(roomId, {
         questionIndex: quizState.questionIndex,
         selectedAnswer: answerIndex,
         timeAnswered: quizState.timeLeft
       });
+      // Immediately show results state (disable buttons, show waiting)
+      setQuizState(prev => ({ ...prev, showingResults: true }));
     }
   };
 
@@ -319,7 +336,29 @@ const Game = () => {
   };
 
   const renderQuiz = () => {
-    if (!quizState.currentQuestion) {
+    if (quizState.summary) {
+      // Summary screen
+      return (
+        <div className="card">
+          <h3>Quiz Summary</h3>
+          <div>
+            <h4>Final Scores</h4>
+            <ul>
+              {quizState.summary.map((score, idx) => {
+                const player = room.players.find(p => p.user === score.userId || p.user.id === score.userId);
+                return (
+                  <li key={score.userId}>
+                    {player ? player.user.username : 'Unknown'}: {score.score}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <button className="btn btn-primary" onClick={handleRestartGame}>Play Again</button>
+        </div>
+      );
+    }
+    if (!quizState.currentQuestion && !quizState.showingResults) {
       return (
         <div className="card">
           <h3>Quiz Game</h3>
@@ -327,32 +366,65 @@ const Game = () => {
         </div>
       );
     }
-
+    if (quizState.showingResults && quizState.results) {
+      // Show results state
+      const { correctAnswer, scores } = quizState.results;
+      return (
+        <div className="card">
+          <h3>Quiz Game</h3>
+          <div className="quiz-container">
+            <div className="quiz-timer">Next question in 3 seconds...</div>
+            <div className="quiz-question">{quizState.currentQuestion?.question}</div>
+            <div className="quiz-options">
+              {quizState.currentQuestion.options.map((option, index) => (
+                <div
+                  key={index}
+                  className={`quiz-option ${index === correctAnswer ? 'correct' : ''} ${quizState.selectedAnswer === index ? 'selected' : ''}`}
+                  style={{ cursor: 'default', opacity: index === correctAnswer ? 1 : 0.6 }}
+                >
+                  {String.fromCharCode(65 + index)}. {option}
+                </div>
+              ))}
+            </div>
+            <div className="quiz-scores">
+              <h4>Scores</h4>
+              <ul>
+                {scores.map((score, idx) => {
+                  const player = room.players.find(p => p.user === score.userId || p.user.id === score.userId);
+                  return (
+                    <li key={score.userId}>
+                      {player ? player.user.username : 'Unknown'}: {score.score}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // Normal question state
     return (
       <div className="card">
         <h3>Quiz Game</h3>
-        
         <div className="quiz-container">
-          <div className="quiz-timer">
-            Time: {quizState.timeLeft}s
-          </div>
-          
-          <div className="quiz-question">
-            {quizState.currentQuestion.question}
-          </div>
-          
+          <div className="quiz-timer">Time: {quizState.timeLeft}s</div>
+          <div className="quiz-question">{quizState.currentQuestion.question}</div>
           <div className="quiz-options">
             {quizState.currentQuestion.options.map((option, index) => (
               <div
                 key={index}
                 className={`quiz-option ${quizState.selectedAnswer === index ? 'selected' : ''}`}
-                onClick={() => handleQuizAnswer(index)}
-                style={{ cursor: quizState.selectedAnswer === null ? 'pointer' : 'default' }}
+                onClick={() => quizState.selectedAnswer === null && !quizState.showingResults && handleQuizAnswer(index)}
+                style={{ cursor: quizState.selectedAnswer === null && !quizState.showingResults ? 'pointer' : 'default', opacity: quizState.selectedAnswer !== null || quizState.showingResults ? 0.6 : 1 }}
               >
                 {String.fromCharCode(65 + index)}. {option}
               </div>
             ))}
           </div>
+          {quizState.selectedAnswer !== null && !quizState.showingResults && (
+            <div className="quiz-waiting">Waiting for other players to answer...</div>
+          )}
         </div>
       </div>
     );

@@ -64,7 +64,7 @@ const quizQuestions = [
 function generateQuizQuestions() {
   // Shuffle questions and return 5 random ones
   const shuffled = [...quizQuestions].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, 5);
+  return shuffled.slice(0, 5); // Always 5 questions per game
 }
 
 module.exports = {
