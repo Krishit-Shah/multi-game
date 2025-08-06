@@ -44,7 +44,10 @@ const Game = () => {
       joinRoom(room.id);
       
       const handleRoomUpdated = ({ room: updatedRoom }) => {
-        console.log('Room updated in game:', updatedRoom);
+        // Only log significant room updates, not every single one
+        if (updatedRoom.gameState !== room?.gameState) {
+          console.log('Game state changed:', updatedRoom.gameState);
+        }
         setRoom(updatedRoom);
         setGameData(updatedRoom.gameData);
         
@@ -56,12 +59,15 @@ const Game = () => {
       };
 
       const handleGameStarted = ({ gameType, gameData: newGameData }) => {
-        console.log('Game started in game component:', gameType, newGameData);
+        console.log('Game started:', gameType);
         setGameData(newGameData);
       };
 
       const handleGameUpdated = ({ gameData: updatedGameData, gameState }) => {
-        console.log('Game updated:', updatedGameData, gameState);
+        // Only log when game state changes or game ends
+        if (gameState === 'finished' || gameState !== gameData?.gameState) {
+          console.log('Game state updated:', gameState);
+        }
         setGameData(updatedGameData);
         setIsMoving(false); // Reset moving state when game is updated
         if (gameState === 'finished') {
@@ -70,14 +76,14 @@ const Game = () => {
       };
 
       const handleGameReset = ({ gameState, gameData: resetGameData }) => {
-        console.log('Game reset:', gameState, resetGameData);
+        console.log('Game reset to:', gameState);
         setGameData(resetGameData);
         // Redirect back to room when game is reset
         navigate(`/room/${roomId}`);
       };
 
       const handleQuizQuestion = ({ question, questionIndex, timeLimit }) => {
-        console.log('Quiz question received:', question);
+        console.log('Quiz question:', questionIndex + 1);
         setQuizState({
           currentQuestion: question,
           questionIndex,
@@ -93,7 +99,7 @@ const Game = () => {
       };
 
       const handleQuizResults = ({ questionIndex, correctAnswer, answers, scores }) => {
-        console.log('Quiz results received:', { questionIndex, correctAnswer, answers, scores });
+        console.log('Quiz results for question:', questionIndex + 1);
         // Clear timer
         if (quizState.timer) {
           clearInterval(quizState.timer);
@@ -111,7 +117,7 @@ const Game = () => {
       };
 
       const handleGameEnded = ({ finalScores }) => {
-        console.log('Game ended:', finalScores);
+        console.log('Game ended with final scores');
         // Game completely finished
         setGameData(prev => ({ ...prev, gameState: 'finished' }));
       };

@@ -273,7 +273,6 @@ module.exports = (io) => {
         }
 
         socket.join(roomId);
-        console.log(`Socket ${socket.id} (${socket.username}) joined room ${roomId}`);
         
         // Format room data for frontend
         const formattedRoom = {
@@ -296,22 +295,19 @@ module.exports = (io) => {
           gameData: room.gameData
         };
         
-        // First, send the current room state to the joining user
+        // Send the current room state to the joining user
         socket.emit('room-updated', {
           room: formattedRoom
         });
 
-        // Then, notify all other players in the room that someone joined
+        // Notify all other players in the room that someone joined
         socket.to(roomId).emit('player-socket-connected', {
           userId: socket.userId,
           username: socket.username,
           room: formattedRoom
         });
 
-        // Also emit room update to all players to ensure consistency
-        io.to(roomId).emit('room-updated', {
-          room: formattedRoom
-        });
+        // No need for additional room-updated emission here - already sent above
 
         // Check if we should start countdown based on room settings
         await checkAndStartCountdown(roomId, io);
@@ -498,7 +494,6 @@ module.exports = (io) => {
             tempId: tempMessageId,
             realId: savedMessage._id
           });
-          console.log('Message saved to database');
         }).catch(error => {
           console.error('Error saving message:', error);
           // Optionally emit error to remove the temporary message
@@ -517,7 +512,8 @@ module.exports = (io) => {
     socket.on('game-move', async (data) => {
       try {
         const { roomId, move } = data;
-        console.log(`Game move received from ${socket.username}:`, move);
+        // Only log for debugging if needed
+        // console.log(`Game move received from ${socket.username}:`, move);
         
         // Use lean() for faster query without full document features
         const room = await Room.findById(roomId).lean();
@@ -640,8 +636,6 @@ module.exports = (io) => {
   async function handleTicTacToeMove(room, move, socket, io, roomId) {
     const { row, col } = move;
     
-    console.log(`Processing TicTacToe move: row=${row}, col=${col} by ${socket.username}`);
-    
     // Get the latest room data to avoid race conditions
     const latestRoom = await Room.findById(roomId);
     if (!latestRoom || latestRoom.gameState !== 'playing') {
@@ -651,7 +645,6 @@ module.exports = (io) => {
     
     // Validate move
     if (latestRoom.gameData.currentTurn.toString() !== socket.userId.toString()) {
-      console.log(`Not ${socket.username}'s turn. Current turn: ${latestRoom.gameData.currentTurn}`);
       socket.emit('error', { message: 'Not your turn' });
       return;
     }
@@ -662,7 +655,6 @@ module.exports = (io) => {
     }
 
     if (latestRoom.gameData.board[row][col] !== '') {
-      console.log(`Cell ${row},${col} is already occupied: ${latestRoom.gameData.board[row][col]}`);
       socket.emit('error', { message: 'Invalid move - cell already occupied' });
       return;
     }
@@ -686,7 +678,7 @@ module.exports = (io) => {
     if (winner) {
       updatedGameData.winner = socket.userId;
       updatedGameState = 'finished';
-      console.log(`Game won by ${socket.username} (${symbol})`);
+      console.log(`Game won by ${socket.username}`);
     } else if (isBoardFull(updatedGameData.board)) {
       updatedGameState = 'finished';
       console.log('Game ended in draw');
@@ -695,10 +687,7 @@ module.exports = (io) => {
       const currentPlayerIndex = latestRoom.players.findIndex(p => p.user.toString() === latestRoom.gameData.currentTurn.toString());
       const nextPlayerIndex = (currentPlayerIndex + 1) % latestRoom.players.length;
       updatedGameData.currentTurn = latestRoom.players[nextPlayerIndex].user;
-      console.log(`Turn switched to player ${nextPlayerIndex}`);
     }
-
-    console.log(`Move made by ${socket.username} (${symbol}) at ${row},${col}`);
 
     // Emit game update immediately for instant feedback
     io.to(roomId).emit('game-updated', {
@@ -718,13 +707,9 @@ module.exports = (io) => {
       updateOperations[`players.${playerIndex}.score`] = latestRoom.players[playerIndex].score + 10;
     }
 
-    Room.findByIdAndUpdate(roomId, { $set: updateOperations }).then(() => {
-      console.log('Room updated in database after move');
-    }).catch(error => {
+    Room.findByIdAndUpdate(roomId, { $set: updateOperations }).catch(error => {
       console.error('Error updating room after move:', error);
     });
-
-    console.log('Game update events emitted immediately');
   }
 
   async function handleQuizMove(room, move, socket, io) {
