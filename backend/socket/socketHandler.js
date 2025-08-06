@@ -6,6 +6,29 @@ const { generateQuizQuestions } = require('../utils/quizQuestions');
 
 // Store active socket connections
 const connectedUsers = new Map();
+// Store room timers to prevent memory leaks
+const roomTimers = new Map();
+
+// Helper to clear room timers
+function clearRoomTimers(roomId) {
+  const timers = roomTimers.get(roomId) || [];
+  timers.forEach(timer => {
+    try {
+      clearTimeout(timer);
+    } catch (error) {
+      console.error('Error clearing timer:', error);
+    }
+  });
+  roomTimers.delete(roomId);
+}
+
+// Helper to add room timer
+function addRoomTimer(roomId, timer) {
+  if (!roomTimers.has(roomId)) {
+    roomTimers.set(roomId, []);
+  }
+  roomTimers.get(roomId).push(timer);
+}
 
 // Define shared functions before module.exports
 async function checkAndStartCountdown(roomId, io) {
@@ -30,19 +53,29 @@ async function startCountdown(roomId, io) {
     const room = await Room.findById(roomId);
     if (!room) return;
 
+    // Clear any existing timers for this room
+    clearRoomTimers(roomId);
+
     let countdown = 5; // 5 second countdown
     
     const countdownInterval = setInterval(async () => {
-      // Emit countdown update
-      io.to(roomId).emit('countdown-update', { countdown });
-      
-      countdown--;
-      
-      if (countdown <= 0) {
+      try {
+        // Emit countdown update
+        io.to(roomId).emit('countdown-update', { countdown });
+        
+        countdown--;
+        
+        if (countdown <= 0) {
+          clearInterval(countdownInterval);
+          await startGame(roomId, io);
+        }
+      } catch (error) {
+        console.error('Countdown interval error:', error);
         clearInterval(countdownInterval);
-        startGame(roomId, io);
       }
     }, 1000);
+    
+    addRoomTimer(roomId, countdownInterval);
     
   } catch (error) {
     console.error('Countdown error:', error);
@@ -52,8 +85,12 @@ async function startCountdown(roomId, io) {
 async function startGame(roomId, io) {
   try {
     const room = await Room.findById(roomId);
-    if (!room) return;
+    if (!room) {
+      console.error(`Room ${roomId} not found when starting game`);
+      return;
+    }
 
+    console.log(`Starting ${room.gameType} game for room ${roomId}`);
     room.gameState = 'playing';
     
     if (room.gameType === 'tic-tac-toe') {
@@ -69,13 +106,18 @@ async function startGame(roomId, io) {
       room.gameData.currentQuestion = 0;
       room.gameData.answers = [];
       
-      // Start first question
-      setTimeout(() => {
+      // Clear any existing timers
+      clearRoomTimers(roomId);
+      
+      // Start first question after a short delay
+      const questionTimer = setTimeout(() => {
         startQuizQuestion(roomId, io);
       }, 3000);
+      addRoomTimer(roomId, questionTimer);
     }
 
     await room.save();
+    console.log(`Game data saved for room ${roomId}`);
 
     // Ensure game data has string IDs for frontend compatibility
     const gameDataForFrontend = {
@@ -125,19 +167,34 @@ async function startGame(roomId, io) {
 
   } catch (error) {
     console.error('Start game error:', error);
+    // Emit error to room participants
+    io.to(roomId).emit('error', { message: 'Failed to start game. Please try again.' });
   }
 }
 
 async function startQuizQuestion(roomId, io) {
   try {
     const room = await Room.findById(roomId);
-    if (!room || room.gameState !== 'playing') return;
+    if (!room || room.gameState !== 'playing') {
+      console.log(`Cannot start quiz question for room ${roomId}: room not found or not in playing state`);
+      return;
+    }
+
+    // Check if we still have questions
+    if (room.gameData.currentQuestion >= room.gameData.questions.length) {
+      console.log(`No more questions for room ${roomId}, ending game`);
+      await endQuizGame(roomId, io);
+      return;
+    }
 
     // 5 questions per game are already selected in generateQuizQuestions
     const currentQuestion = room.gameData.questions[room.gameData.currentQuestion];
     // Store timestamp for question sent
     room.gameData.questionSentAt = Date.now();
+    
     await room.save();
+    
+    console.log(`Sending question ${room.gameData.currentQuestion + 1} to room ${roomId}`);
 
     io.to(roomId).emit('quiz-question', {
       question: currentQuestion,
@@ -145,34 +202,50 @@ async function startQuizQuestion(roomId, io) {
       timeLimit: 20 // 20 seconds per question
     });
 
-    // Clear any previous timer
-    if (room.gameData.questionTimeout) {
-      clearTimeout(room.gameData.questionTimeout);
-      room.gameData.questionTimeout = null;
-    }
-    // Set timer for 20 seconds
-    room.gameData.questionTimeout = setTimeout(async () => {
+    // Clear any previous timer for this room
+    clearRoomTimers(roomId);
+    
+    // Set timer for 20 seconds with better error handling
+    const questionTimer = setTimeout(async () => {
       try {
+        console.log(`Time up for question ${room.gameData.currentQuestion} in room ${roomId}`);
         await processQuizQuestion(roomId, room.gameData.currentQuestion, io, true);
       } catch (err) {
         console.error('Quiz question auto-advance error:', err);
       }
     }, 20000);
+    
+    addRoomTimer(roomId, questionTimer);
   } catch (error) {
     console.error('Start quiz question error:', error);
+    // Try to continue with next question or end game
+    try {
+      const room = await Room.findById(roomId);
+      if (room && room.gameData.currentQuestion < 4) {
+        room.gameData.currentQuestion++;
+        await room.save();
+        setTimeout(() => startQuizQuestion(roomId, io), 3000);
+      } else {
+        await endQuizGame(roomId, io);
+      }
+    } catch (fallbackError) {
+      console.error('Fallback error in startQuizQuestion:', fallbackError);
+    }
   }
 }
 
 async function processQuizQuestion(roomId, questionIndex, io, autoAdvance = false) {
   try {
     const room = await Room.findById(roomId);
-    if (!room) return;
-
-    // Clear any running timer
-    if (room.gameData.questionTimeout) {
-      clearTimeout(room.gameData.questionTimeout);
-      room.gameData.questionTimeout = null;
+    if (!room) {
+      console.error(`Room ${roomId} not found when processing quiz question`);
+      return;
     }
+
+    console.log(`Processing question ${questionIndex} for room ${roomId}, autoAdvance: ${autoAdvance}`);
+
+    // Clear any running timer for this room
+    clearRoomTimers(roomId);
 
     const question = room.gameData.questions[questionIndex];
     const answers = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
@@ -180,11 +253,12 @@ async function processQuizQuestion(roomId, questionIndex, io, autoAdvance = fals
 
     // Emit auto-advance if not all players answered
     if (autoAdvance && answers.length < activePlayers.length) {
+      const message = `Only ${answers.length}/${activePlayers.length} players answered in time. Moving to next question.`;
       io.to(roomId).emit('question-skipped', {
         questionIndex,
-        message: 'Not all players answered in time. Auto-advancing.'
+        message
       });
-      console.log(`Auto-advance: Only ${answers.length}/${activePlayers.length} answered for question ${questionIndex} in room ${roomId}`);
+      console.log(`Auto-advance: ${message}`);
     }
 
     // Scoring: 10 points for correct answer, 5 bonus for correct within 5 seconds
@@ -197,11 +271,12 @@ async function processQuizQuestion(roomId, questionIndex, io, autoAdvance = fals
             points += 5; // 5 bonus points for answering within 5 seconds
           }
           player.score += points;
+          console.log(`Player ${player.user} earned ${points} points`);
         }
       }
     });
 
-    // Emit results
+    // Emit results with 5-second display time
     io.to(roomId).emit('quiz-results', {
       questionIndex,
       correctAnswer: question.correctAnswer,
@@ -214,28 +289,68 @@ async function processQuizQuestion(roomId, questionIndex, io, autoAdvance = fals
 
     // Move to next question or end game
     room.gameData.currentQuestion++;
+    
     if (room.gameData.currentQuestion >= 5) { // Always 5 questions per game
-      room.gameState = 'finished';
+      console.log(`Quiz completed for room ${roomId}, ending game`);
       await room.save();
-      io.to(roomId).emit('game-ended', {
-        finalScores: room.players.map(p => ({
-          userId: p.user,
-          score: p.score
-        })),
-        summaryDetails: room.gameData.questions.map(q => ({
-          question: q.question,
-          correctAnswer: q.correctAnswer,
-          options: q.options
-        }))
-      });
+      
+      // End game after showing results
+      const endGameTimer = setTimeout(async () => {
+        await endQuizGame(roomId, io);
+      }, 5000);
+      addRoomTimer(roomId, endGameTimer);
     } else {
       await room.save();
-      setTimeout(() => {
+      console.log(`Moving to next question for room ${roomId}`);
+      
+      // Start next question after 5-second results display
+      const nextQuestionTimer = setTimeout(() => {
         startQuizQuestion(roomId, io);
-      }, 3000);
+      }, 5000);
+      addRoomTimer(roomId, nextQuestionTimer);
     }
   } catch (error) {
     console.error('Process quiz question error:', error);
+    // Try to recover by ending the game
+    try {
+      await endQuizGame(roomId, io);
+    } catch (fallbackError) {
+      console.error('Fallback error in processQuizQuestion:', fallbackError);
+    }
+  }
+}
+
+async function endQuizGame(roomId, io) {
+  try {
+    const room = await Room.findById(roomId);
+    if (!room) {
+      console.error(`Room ${roomId} not found when ending quiz game`);
+      return;
+    }
+
+    console.log(`Ending quiz game for room ${roomId}`);
+    
+    room.gameState = 'finished';
+    await room.save();
+    
+    // Clear all timers for this room
+    clearRoomTimers(roomId);
+    
+    io.to(roomId).emit('game-ended', {
+      finalScores: room.players.map(p => ({
+        userId: p.user,
+        score: p.score
+      })),
+      summaryDetails: room.gameData.questions.map(q => ({
+        question: q.question,
+        correctAnswer: q.correctAnswer,
+        options: q.options
+      }))
+    });
+    
+    console.log(`Quiz game ended for room ${roomId}`);
+  } catch (error) {
+    console.error('End quiz game error:', error);
   }
 }
 
@@ -656,7 +771,7 @@ module.exports = (io) => {
       }
     });
 
-    // Handle disconnect - preserve room for potential refresh
+    // Handle disconnect - improved handling
     socket.on('disconnect', async () => {
       console.log(`User disconnected: ${socket.username}`);
       
@@ -667,22 +782,44 @@ module.exports = (io) => {
         // Update user offline status
         await User.findByIdAndUpdate(socket.userId, { isOnline: false });
         
-        // Remove from active players for current question
-        const room = await Room.findOne({ 'players.user': socket.userId, gameState: 'playing' });
-        if (room && room.gameType === 'quiz') {
-          // Remove player from players array
-          room.players = room.players.filter(p => p.user.toString() !== socket.userId.toString());
-          await room.save();
-          // If all remaining players have answered, process immediately
-          const questionIndex = room.gameData.currentQuestion;
-          const activePlayers = room.players.filter(p => !p.isSpectator);
-          const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
-          if (answersForQuestion.length === activePlayers.length) {
-            await processQuizQuestion(room._id.toString(), questionIndex, io);
+        // Find room where user was playing
+        const room = await Room.findOne({ 
+          'players.user': socket.userId, 
+          gameState: { $in: ['playing', 'waiting'] }
+        });
+        
+        if (room) {
+          console.log(`User ${socket.username} disconnected from room ${room._id}`);
+          
+          if (room.gameType === 'quiz' && room.gameState === 'playing') {
+            // For quiz games, check if we need to auto-advance
+            const currentQuestionIndex = room.gameData.currentQuestion;
+            const activePlayers = room.players.filter(p => !p.isSpectator && p.user.toString() !== socket.userId.toString());
+            const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === currentQuestionIndex);
+            
+            console.log(`Quiz room ${room._id}: ${activePlayers.length} active players, ${answersForQuestion.length} answers for question ${currentQuestionIndex}`);
+            
+            // If all remaining players have answered, process immediately
+            if (answersForQuestion.length >= activePlayers.length && activePlayers.length > 0) {
+              console.log(`All remaining players answered, processing question ${currentQuestionIndex} immediately`);
+              // Clear existing timer and process
+              clearRoomTimers(room._id.toString());
+              await processQuizQuestion(room._id.toString(), currentQuestionIndex, io);
+            } else if (activePlayers.length === 0) {
+              // No active players left, end the game
+              console.log(`No active players left in room ${room._id}, ending game`);
+              await endQuizGame(room._id.toString(), io);
+            }
           }
+          
+          // Emit player disconnected event
+          socket.to(room._id.toString()).emit('player-disconnected', {
+            userId: socket.userId,
+            username: socket.username
+          });
         }
-        // Don't clear currentRoom - preserve it for refresh
-        console.log(`User ${socket.username} disconnected - room preserved for potential refresh`);
+        
+        console.log(`User ${socket.username} disconnect cleanup completed`);
         
       } catch (error) {
         console.error('Disconnect cleanup error:', error);
@@ -800,31 +937,53 @@ module.exports = (io) => {
 
   async function handleQuizMove(room, move, socket, io) {
     const { questionIndex, selectedAnswer } = move;
-    // Check if answer already submitted
-    const existingAnswer = room.gameData.answers.find(
-      a => a.player.toString() === socket.userId.toString() && a.questionIndex === questionIndex
-    );
-    if (existingAnswer) return;
+    
+    try {
+      // Check if answer already submitted
+      const existingAnswer = room.gameData.answers.find(
+        a => a.player.toString() === socket.userId.toString() && a.questionIndex === questionIndex
+      );
+      if (existingAnswer) {
+        console.log(`Player ${socket.username} already answered question ${questionIndex}`);
+        return;
+      }
 
-    // Calculate answer time based on questionSentAt
-    const now = Date.now();
-    const timeAnswered = room.gameData.questionSentAt ? Math.floor((now - room.gameData.questionSentAt) / 1000) : 20;
+      // Calculate answer time based on questionSentAt with better precision
+      const now = Date.now();
+      const timeAnswered = room.gameData.questionSentAt 
+        ? Math.max(0, Math.floor((now - room.gameData.questionSentAt) / 1000))
+        : 20;
 
-    // Add answer
-    room.gameData.answers.push({
-      player: socket.userId,
-      questionIndex,
-      answer: selectedAnswer,
-      timeAnswered
-    });
-    await Room.findByIdAndUpdate(room._id, { $set: { 'gameData.answers': room.gameData.answers } });
+      console.log(`Player ${socket.username} answered question ${questionIndex} in ${timeAnswered}s`);
 
-    // Check if all players answered
-    const activePlayers = room.players.filter(p => !p.isSpectator);
-    const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
-    if (answersForQuestion.length === activePlayers.length) {
-      // All answered, process immediately
-      await processQuizQuestion(room._id.toString(), questionIndex, io);
+      // Add answer
+      room.gameData.answers.push({
+        player: socket.userId,
+        questionIndex,
+        answer: selectedAnswer,
+        timeAnswered,
+        timestamp: now
+      });
+      
+      await Room.findByIdAndUpdate(room._id, { 
+        $set: { 'gameData.answers': room.gameData.answers } 
+      });
+
+      // Check if all active players answered
+      const activePlayers = room.players.filter(p => !p.isSpectator);
+      const answersForQuestion = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
+      
+      console.log(`Question ${questionIndex}: ${answersForQuestion.length}/${activePlayers.length} players answered`);
+      
+      if (answersForQuestion.length === activePlayers.length) {
+        // All answered, process immediately
+        console.log(`All players answered question ${questionIndex}, processing immediately`);
+        clearRoomTimers(room._id.toString());
+        await processQuizQuestion(room._id.toString(), questionIndex, io);
+      }
+    } catch (error) {
+      console.error('Handle quiz move error:', error);
+      socket.emit('error', { message: 'Failed to submit answer. Please try again.' });
     }
   }
 
