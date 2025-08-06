@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -23,9 +23,20 @@ const Game = () => {
     timer: null,
     showingResults: false,
     results: null,
-    summary: null
+    summary: null,
+    summaryDetails: null,
+    skippedMessage: null
   });
   const [isMoving, setIsMoving] = useState(false);
+
+  // Timer refs
+  const timers = useRef([]);
+
+  // Helper to clear all timers
+  const clearAllTimers = () => {
+    timers.current.forEach(timer => clearTimeout(timer));
+    timers.current = [];
+  };
 
   const fetchRoom = useCallback(async () => {
     try {
@@ -87,50 +98,51 @@ const Game = () => {
       };
 
       const handleQuizQuestion = ({ question, questionIndex, timeLimit }) => {
-        if (quizState.timer) clearInterval(quizState.timer);
-        setQuizState({
+        clearAllTimers();
+        setQuizState(prev => ({
+          ...prev,
           currentQuestion: question,
           questionIndex,
-          selectedAnswer: null,
           timeLeft: timeLimit,
-          timer: setInterval(() => {
-            setQuizState(prev => ({
-              ...prev,
-              timeLeft: prev.timeLeft - 1
-            }));
-          }, 1000),
+          selectedAnswer: null,
           showingResults: false,
-          results: null,
-          summary: null
-        });
+          results: null
+        }));
+        // Start countdown
+        const timer = setTimeout(() => {
+          setQuizState(prev => ({ ...prev, timeLeft: 0 }));
+        }, timeLimit * 1000);
+        timers.current.push(timer);
       };
 
       const handleQuizResults = ({ questionIndex, correctAnswer, answers, scores }) => {
-        if (quizState.timer) clearInterval(quizState.timer);
+        clearAllTimers();
         setQuizState(prev => ({
           ...prev,
-          showingResults: true,
           results: { questionIndex, correctAnswer, answers, scores },
-          timer: null
+          showingResults: true
         }));
-        setTimeout(() => {
+        // Show results for 3 seconds, then clear
+        const timer = setTimeout(() => {
           setQuizState(prev => ({
             ...prev,
             currentQuestion: null,
-            selectedAnswer: null,
             showingResults: false,
-            results: null,
-            timer: null
+            selectedAnswer: null,
+            results: null
           }));
         }, 3000);
+        timers.current.push(timer);
       };
 
-      const handleGameEnded = ({ finalScores }) => {
+      const handleGameEnded = ({ finalScores, summaryDetails }) => {
         setQuizState(prev => ({
           ...prev,
           summary: finalScores,
+          summaryDetails,
           currentQuestion: null,
           showingResults: false,
+          selectedAnswer: null,
           results: null,
           timer: null
         }));
@@ -143,16 +155,36 @@ const Game = () => {
       socket.on('game-reset', handleGameReset);
       socket.on('quiz-question', handleQuizQuestion);
       socket.on('quiz-results', handleQuizResults);
-      socket.on('game-ended', handleGameEnded);
+      socket.on('question-skipped', ({ message }) => {
+        setQuizState(prev => ({ ...prev, skippedMessage: message }));
+        // Remove the message after a short delay
+        const timer = setTimeout(() => {
+          setQuizState(prev => ({ ...prev, skippedMessage: null }));
+        }, 2000);
+        timers.current.push(timer);
+      });
+      socket.on('game-ended', ({ finalScores, summaryDetails }) => {
+        setQuizState(prev => ({
+          ...prev,
+          summary: finalScores,
+          summaryDetails,
+          currentQuestion: null,
+          showingResults: false,
+          selectedAnswer: null,
+          results: null
+        }));
+      });
 
       return () => {
+        clearAllTimers();
         socket.off('room-updated', handleRoomUpdated);
         socket.off('game-started', handleGameStarted);
         socket.off('game-updated', handleGameUpdated);
         socket.off('game-reset', handleGameReset);
         socket.off('quiz-question', handleQuizQuestion);
         socket.off('quiz-results', handleQuizResults);
-        socket.off('game-ended', handleGameEnded);
+        socket.off('question-skipped');
+        socket.off('game-ended');
       };
     }
   }, [socket, room, roomId, navigate, joinRoom, quizState.timer]);
@@ -222,10 +254,8 @@ const Game = () => {
       setQuizState(prev => ({ ...prev, selectedAnswer: answerIndex }));
       makeMove(roomId, {
         questionIndex: quizState.questionIndex,
-        selectedAnswer: answerIndex,
-        timeAnswered: quizState.timeLeft
+        selectedAnswer: answerIndex
       });
-      // Immediately show results state (disable buttons, show waiting)
       setQuizState(prev => ({ ...prev, showingResults: true }));
     }
   };
@@ -336,8 +366,16 @@ const Game = () => {
   };
 
   const renderQuiz = () => {
+    if (quizState.skippedMessage) {
+      return (
+        <div className="card">
+          <h3>Quiz Game</h3>
+          <div className="alert alert-warning">{quizState.skippedMessage}</div>
+        </div>
+      );
+    }
     if (quizState.summary) {
-      // Summary screen
+      // Enhanced summary screen with correct answers
       return (
         <div className="card">
           <h3>Quiz Summary</h3>
@@ -354,6 +392,19 @@ const Game = () => {
               })}
             </ul>
           </div>
+          {quizState.summaryDetails && (
+            <div>
+              <h4>Correct Answers</h4>
+              <ul>
+                {quizState.summaryDetails.map((q, idx) => (
+                  <li key={idx}>
+                    Q{idx + 1}: {q.question} <br />
+                    Correct: {String.fromCharCode(65 + q.correctAnswer)}. {q.options[q.correctAnswer]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <button className="btn btn-primary" onClick={handleRestartGame}>Play Again</button>
         </div>
       );
@@ -367,7 +418,6 @@ const Game = () => {
       );
     }
     if (quizState.showingResults && quizState.results) {
-      // Show results state
       const { correctAnswer, scores } = quizState.results;
       return (
         <div className="card">
@@ -417,6 +467,7 @@ const Game = () => {
                 className={`quiz-option ${quizState.selectedAnswer === index ? 'selected' : ''}`}
                 onClick={() => quizState.selectedAnswer === null && !quizState.showingResults && handleQuizAnswer(index)}
                 style={{ cursor: quizState.selectedAnswer === null && !quizState.showingResults ? 'pointer' : 'default', opacity: quizState.selectedAnswer !== null || quizState.showingResults ? 0.6 : 1 }}
+                aria-disabled={quizState.selectedAnswer !== null || quizState.showingResults}
               >
                 {String.fromCharCode(65 + index)}. {option}
               </div>

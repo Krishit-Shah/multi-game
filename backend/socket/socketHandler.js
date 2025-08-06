@@ -145,16 +145,25 @@ async function startQuizQuestion(roomId, io) {
       timeLimit: 20 // 20 seconds per question
     });
 
+    // Clear any previous timer
+    if (room.gameData.questionTimeout) {
+      clearTimeout(room.gameData.questionTimeout);
+      room.gameData.questionTimeout = null;
+    }
     // Set timer for 20 seconds
     room.gameData.questionTimeout = setTimeout(async () => {
-      await processQuizQuestion(roomId, room.gameData.currentQuestion, io);
+      try {
+        await processQuizQuestion(roomId, room.gameData.currentQuestion, io, true);
+      } catch (err) {
+        console.error('Quiz question auto-advance error:', err);
+      }
     }, 20000);
   } catch (error) {
     console.error('Start quiz question error:', error);
   }
 }
 
-async function processQuizQuestion(roomId, questionIndex, io) {
+async function processQuizQuestion(roomId, questionIndex, io, autoAdvance = false) {
   try {
     const room = await Room.findById(roomId);
     if (!room) return;
@@ -167,6 +176,16 @@ async function processQuizQuestion(roomId, questionIndex, io) {
 
     const question = room.gameData.questions[questionIndex];
     const answers = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
+    const activePlayers = room.players.filter(p => !p.isSpectator);
+
+    // Emit auto-advance if not all players answered
+    if (autoAdvance && answers.length < activePlayers.length) {
+      io.to(roomId).emit('question-skipped', {
+        questionIndex,
+        message: 'Not all players answered in time. Auto-advancing.'
+      });
+      console.log(`Auto-advance: Only ${answers.length}/${activePlayers.length} answered for question ${questionIndex} in room ${roomId}`);
+    }
 
     // Scoring: 10 points for correct answer, 5 bonus for correct within 5 seconds
     answers.forEach(answer => {
@@ -202,6 +221,11 @@ async function processQuizQuestion(roomId, questionIndex, io) {
         finalScores: room.players.map(p => ({
           userId: p.user,
           score: p.score
+        })),
+        summaryDetails: room.gameData.questions.map(q => ({
+          question: q.question,
+          correctAnswer: q.correctAnswer,
+          options: q.options
         }))
       });
     } else {
