@@ -20,7 +20,7 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (user && !socketRef.current) {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const newSocket = io('http://localhost:5000', {
         auth: { token },
         reconnection: true,
