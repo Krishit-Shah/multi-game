@@ -337,14 +337,18 @@ router.post('/join/:code', authenticateToken, async (req, res) => {
           id: player.user._id,
           username: player.user.username
         },
-        isReady: player.isReady,
-        score: player.score,
-        isSpectator: player.isSpectator || false
-      })),
-      maxPlayers: updatedRoom.maxPlayers,
-      gameState: updatedRoom.gameState,
-      gameData: updatedRoom.gameData
-    };
+              isReady: player.isReady,
+      score: player.score,
+      isSpectator: player.isSpectator || false
+    })),
+    maxPlayers: updatedRoom.maxPlayers,
+    gameState: updatedRoom.gameState,
+    gameData: {
+      ...updatedRoom.gameData,
+      currentTurn: updatedRoom.gameData.currentTurn?.toString(),
+      winner: updatedRoom.gameData.winner?.toString()
+    }
+  };
 
     // Emit socket event to notify all players in the room about the new player
     const io = req.app.get('io');

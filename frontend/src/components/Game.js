@@ -162,15 +162,25 @@ const Game = () => {
   };
 
   const handleTicTacToeMove = (row, col) => {
+    console.log('Move attempt:', {
+      gameData: !!gameData,
+      currentTurn: gameData?.currentTurn,
+      userId: user.id,
+      isMyTurn: gameData?.currentTurn === user.id,
+      cellEmpty: !gameData?.board[row][col],
+      isMoving,
+      canMove: gameData && gameData.currentTurn === user.id && !gameData.board[row][col] && !isMoving
+    });
+    
     if (gameData && gameData.currentTurn === user.id && !gameData.board[row][col] && !isMoving) {
       console.log('Making move:', row, col);
       
       // Set moving state to prevent double-clicks
       setIsMoving(true);
       
-      // Determine player symbol based on player index in room
-      const currentPlayer = room?.players?.find(p => p.user.id === user.id);
-      const playerIndex = room?.players?.findIndex(p => p.user.id === user.id);
+      // Determine player symbol based on active player index in room
+      const activePlayers = room?.players?.filter(p => !p.isSpectator) || [];
+      const playerIndex = activePlayers.findIndex(p => p.user.id === user.id);
       const symbol = playerIndex === 0 ? 'X' : 'O';
       
       // Optimistic UI update - immediately update the board
@@ -232,6 +242,14 @@ const Game = () => {
 
     const isMyTurn = gameData.currentTurn === user.id;
     const gameFinished = gameData.winner || gameData.board.every(row => row.every(cell => cell !== ''));
+    
+    // Debug logging for turn validation
+    console.log('Turn Debug:', {
+      currentTurn: gameData.currentTurn,
+      userId: user.id,
+      isMyTurn,
+      gameData: gameData
+    });
 
     return (
       <div className="card">

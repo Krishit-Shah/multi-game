@@ -59,7 +59,9 @@ async function startGame(roomId, io) {
     if (room.gameType === 'tic-tac-toe') {
       // Initialize Tic Tac Toe
       room.gameData.board = [['', '', ''], ['', '', ''], ['', '', '']];
-      room.gameData.currentTurn = room.players[0].user;
+      // Set first turn to first active (non-spectator) player
+      const activePlayers = room.players.filter(p => !p.isSpectator);
+      room.gameData.currentTurn = activePlayers[0].user;
       room.gameData.winner = null;
     } else if (room.gameType === 'quiz') {
       // Initialize Quiz
@@ -75,10 +77,17 @@ async function startGame(roomId, io) {
 
     await room.save();
 
+    // Ensure game data has string IDs for frontend compatibility
+    const gameDataForFrontend = {
+      ...room.gameData,
+      currentTurn: room.gameData.currentTurn?.toString(),
+      winner: room.gameData.winner?.toString()
+    };
+
     // Emit game started event to all players
     io.to(roomId).emit('game-started', {
       gameType: room.gameType,
-      gameData: room.gameData
+      gameData: gameDataForFrontend
     });
 
     // Also emit room update to ensure all clients have latest data
@@ -104,7 +113,11 @@ async function startGame(roomId, io) {
         })),
         maxPlayers: updatedRoom.maxPlayers,
         gameState: updatedRoom.gameState,
-        gameData: updatedRoom.gameData
+        gameData: {
+          ...updatedRoom.gameData,
+          currentTurn: updatedRoom.gameData.currentTurn?.toString(),
+          winner: updatedRoom.gameData.winner?.toString()
+        }
       };
       
       io.to(roomId).emit('room-updated', { room: formattedRoom });
@@ -292,7 +305,11 @@ module.exports = (io) => {
           })),
           maxPlayers: room.maxPlayers,
           gameState: room.gameState,
-          gameData: room.gameData
+          gameData: {
+            ...room.gameData,
+            currentTurn: room.gameData.currentTurn?.toString(),
+            winner: room.gameData.winner?.toString()
+          }
         };
         
         // Send the current room state to the joining user
@@ -659,8 +676,15 @@ module.exports = (io) => {
       return;
     }
 
-    // Make move
-    const playerIndex = latestRoom.players.findIndex(p => p.user.toString() === socket.userId.toString());
+    // Get only active (non-spectator) players for turn management
+    const activePlayers = latestRoom.players.filter(p => !p.isSpectator);
+    const playerIndex = activePlayers.findIndex(p => p.user.toString() === socket.userId.toString());
+    
+    if (playerIndex === -1) {
+      socket.emit('error', { message: 'Player not found in active players' });
+      return;
+    }
+    
     const symbol = playerIndex === 0 ? 'X' : 'O';
     
     // Create updated game data for immediate response
@@ -683,19 +707,39 @@ module.exports = (io) => {
       updatedGameState = 'finished';
       console.log('Game ended in draw');
     } else {
-      // Switch turns
-      const currentPlayerIndex = latestRoom.players.findIndex(p => p.user.toString() === latestRoom.gameData.currentTurn.toString());
-      const nextPlayerIndex = (currentPlayerIndex + 1) % latestRoom.players.length;
-      updatedGameData.currentTurn = latestRoom.players[nextPlayerIndex].user;
+      // Switch turns - only consider active players
+      const currentPlayerIndex = activePlayers.findIndex(p => p.user.toString() === latestRoom.gameData.currentTurn.toString());
+      const nextPlayerIndex = (currentPlayerIndex + 1) % activePlayers.length;
+      updatedGameData.currentTurn = activePlayers[nextPlayerIndex].user;
+      
+      console.log(`Turn switched from player ${currentPlayerIndex} to player ${nextPlayerIndex}`);
     }
+
+    // Debug logging for turn validation
+    console.log('Backend Turn Debug:', {
+      currentTurn: updatedGameData.currentTurn,
+      currentTurnString: updatedGameData.currentTurn?.toString(),
+      currentUserId: socket.userId,
+      currentUserIdString: socket.userId?.toString()
+    });
+
+    // Ensure currentTurn is sent as string for frontend compatibility
+    const gameDataForFrontend = {
+      ...updatedGameData,
+      currentTurn: updatedGameData.currentTurn?.toString(),
+      winner: updatedGameData.winner?.toString()
+    };
 
     // Emit game update immediately for instant feedback
     io.to(roomId).emit('game-updated', {
-      gameData: updatedGameData,
+      gameData: gameDataForFrontend,
       gameState: updatedGameState
     });
 
     // Update database asynchronously using atomic operations
+    // Get the actual player index in the full players array for scoring
+    const fullPlayerIndex = latestRoom.players.findIndex(p => p.user.toString() === socket.userId.toString());
+    
     const updateOperations = {
       [`gameData.board.${row}.${col}`]: symbol,
       'gameData.currentTurn': updatedGameData.currentTurn,
@@ -704,7 +748,7 @@ module.exports = (io) => {
 
     if (winner) {
       updateOperations['gameData.winner'] = socket.userId;
-      updateOperations[`players.${playerIndex}.score`] = latestRoom.players[playerIndex].score + 10;
+      updateOperations[`players.${fullPlayerIndex}.score`] = latestRoom.players[fullPlayerIndex].score + 10;
     }
 
     Room.findByIdAndUpdate(roomId, { $set: updateOperations }).catch(error => {
