@@ -77,10 +77,17 @@ async function startGame(roomId, io) {
 
     await room.save();
 
+    // Ensure game data has string IDs for frontend compatibility
+    const gameDataForFrontend = {
+      ...room.gameData,
+      currentTurn: room.gameData.currentTurn?.toString(),
+      winner: room.gameData.winner?.toString()
+    };
+
     // Emit game started event to all players
     io.to(roomId).emit('game-started', {
       gameType: room.gameType,
-      gameData: room.gameData
+      gameData: gameDataForFrontend
     });
 
     // Also emit room update to ensure all clients have latest data
@@ -106,7 +113,11 @@ async function startGame(roomId, io) {
         })),
         maxPlayers: updatedRoom.maxPlayers,
         gameState: updatedRoom.gameState,
-        gameData: updatedRoom.gameData
+        gameData: {
+          ...updatedRoom.gameData,
+          currentTurn: updatedRoom.gameData.currentTurn?.toString(),
+          winner: updatedRoom.gameData.winner?.toString()
+        }
       };
       
       io.to(roomId).emit('room-updated', { room: formattedRoom });
@@ -294,7 +305,11 @@ module.exports = (io) => {
           })),
           maxPlayers: room.maxPlayers,
           gameState: room.gameState,
-          gameData: room.gameData
+          gameData: {
+            ...room.gameData,
+            currentTurn: room.gameData.currentTurn?.toString(),
+            winner: room.gameData.winner?.toString()
+          }
         };
         
         // Send the current room state to the joining user
@@ -700,9 +715,24 @@ module.exports = (io) => {
       console.log(`Turn switched from player ${currentPlayerIndex} to player ${nextPlayerIndex}`);
     }
 
+    // Debug logging for turn validation
+    console.log('Backend Turn Debug:', {
+      currentTurn: updatedGameData.currentTurn,
+      currentTurnString: updatedGameData.currentTurn?.toString(),
+      currentUserId: socket.userId,
+      currentUserIdString: socket.userId?.toString()
+    });
+
+    // Ensure currentTurn is sent as string for frontend compatibility
+    const gameDataForFrontend = {
+      ...updatedGameData,
+      currentTurn: updatedGameData.currentTurn?.toString(),
+      winner: updatedGameData.winner?.toString()
+    };
+
     // Emit game update immediately for instant feedback
     io.to(roomId).emit('game-updated', {
-      gameData: updatedGameData,
+      gameData: gameDataForFrontend,
       gameState: updatedGameState
     });
 

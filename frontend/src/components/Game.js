@@ -162,6 +162,16 @@ const Game = () => {
   };
 
   const handleTicTacToeMove = (row, col) => {
+    console.log('Move attempt:', {
+      gameData: !!gameData,
+      currentTurn: gameData?.currentTurn,
+      userId: user.id,
+      isMyTurn: gameData?.currentTurn === user.id,
+      cellEmpty: !gameData?.board[row][col],
+      isMoving,
+      canMove: gameData && gameData.currentTurn === user.id && !gameData.board[row][col] && !isMoving
+    });
+    
     if (gameData && gameData.currentTurn === user.id && !gameData.board[row][col] && !isMoving) {
       console.log('Making move:', row, col);
       
@@ -232,6 +242,14 @@ const Game = () => {
 
     const isMyTurn = gameData.currentTurn === user.id;
     const gameFinished = gameData.winner || gameData.board.every(row => row.every(cell => cell !== ''));
+    
+    // Debug logging for turn validation
+    console.log('Turn Debug:', {
+      currentTurn: gameData.currentTurn,
+      userId: user.id,
+      isMyTurn,
+      gameData: gameData
+    });
 
     return (
       <div className="card">
