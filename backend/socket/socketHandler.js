@@ -133,6 +133,7 @@ async function startQuizQuestion(roomId, io) {
     const room = await Room.findById(roomId);
     if (!room || room.gameState !== 'playing') return;
 
+    // 5 questions per game are already selected in generateQuizQuestions
     const currentQuestion = room.gameData.questions[room.gameData.currentQuestion];
     // Store timestamp for question sent
     room.gameData.questionSentAt = Date.now();
@@ -141,10 +142,10 @@ async function startQuizQuestion(roomId, io) {
     io.to(roomId).emit('quiz-question', {
       question: currentQuestion,
       questionIndex: room.gameData.currentQuestion,
-      timeLimit: 20
+      timeLimit: 20 // 20 seconds per question
     });
 
-    // Set timer
+    // Set timer for 20 seconds
     room.gameData.questionTimeout = setTimeout(async () => {
       await processQuizQuestion(roomId, room.gameData.currentQuestion, io);
     }, 20000);
@@ -167,15 +168,14 @@ async function processQuizQuestion(roomId, questionIndex, io) {
     const question = room.gameData.questions[questionIndex];
     const answers = room.gameData.answers.filter(a => a.questionIndex === questionIndex);
 
-    // Calculate scores
+    // Scoring: 10 points for correct answer, 5 bonus for correct within 5 seconds
     answers.forEach(answer => {
       const player = room.players.find(p => p.user.toString() === answer.player.toString());
       if (player) {
         if (answer.answer === question.correctAnswer) {
-          let points = 10;
-          // Bonus for quick answer
-          if (answer.timeAnswered < 5) {
-            points += 5;
+          let points = 10; // 10 points for correct answer
+          if (answer.timeAnswered <= 5) {
+            points += 5; // 5 bonus points for answering within 5 seconds
           }
           player.score += points;
         }
@@ -195,7 +195,7 @@ async function processQuizQuestion(roomId, questionIndex, io) {
 
     // Move to next question or end game
     room.gameData.currentQuestion++;
-    if (room.gameData.currentQuestion >= room.gameData.questions.length) {
+    if (room.gameData.currentQuestion >= 5) { // Always 5 questions per game
       room.gameState = 'finished';
       await room.save();
       io.to(roomId).emit('game-ended', {
